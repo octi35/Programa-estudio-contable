@@ -1,0 +1,57 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: estudio_contable_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: estudio_contable
+      POSTGRES_USER: estudio_user
+      POSTGRES_PASSWORD: estudio_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U estudio_user -d estudio_contable"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: estudio_contable_backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://estudio_user:estudio_pass@postgres:5432/estudio_contable
+      JWT_SECRET: change-this-secret-in-production-min-32-chars
+      JWT_EXPIRES_IN: 7d
+      FRONTEND_URL: http://localhost:5173
+      UPLOAD_DIR: ./uploads
+    volumes:
+      - uploads_data:/app/uploads
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: estudio_contable_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+  uploads_data:

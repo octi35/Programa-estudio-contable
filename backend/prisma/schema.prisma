@@ -1,0 +1,401 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USUARIOS DEL SISTEMA ────────────────────────────────────────────────────
+
+model Usuario {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  nombre    String
+  rol       RolUsuario @default(CONTADOR)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  estudio   Estudio? @relation(fields: [estudioId], references: [id])
+  estudioId String?
+
+  @@map("usuarios")
+}
+
+enum RolUsuario {
+  ADMIN
+  CONTADOR
+  OPERADOR
+}
+
+// ─── ESTUDIO CONTABLE ─────────────────────────────────────────────────────────
+
+model Estudio {
+  id          String   @id @default(uuid())
+  razonSocial String
+  cuit        String   @unique
+  matricula   String?
+  direccion   String?
+  telefono    String?
+  email       String?
+  logo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  usuarios  Usuario[]
+  empresas  Empresa[]
+
+  @@map("estudios")
+}
+
+// ─── CONVENIOS COLECTIVOS ─────────────────────────────────────────────────────
+
+model Convenio {
+  id          String   @id @default(uuid())
+  codigo      String   @unique
+  nombre      String
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresas  Empresa[]
+  conceptos Concepto[]
+  tablasSueldo TablaSueldo[]
+
+  @@map("convenios")
+}
+
+// ─── TABLA DE SUELDOS BÁSICOS ─────────────────────────────────────────────────
+
+model TablaSueldo {
+  id          String   @id @default(uuid())
+  convenioId  String
+  categoria   String
+  descripcion String?
+  basicoMensual Decimal @db.Decimal(12, 2)
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  convenio  Convenio @relation(fields: [convenioId], references: [id])
+
+  @@map("tablas_sueldo")
+}
+
+// ─── EMPRESAS (CLIENTES DEL ESTUDIO) ─────────────────────────────────────────
+
+model Empresa {
+  id              String   @id @default(uuid())
+  razonSocial     String
+  nombreFantasia  String?
+  cuit            String   @unique
+  domicilio       String?
+  localidad       String?
+  provincia       String?
+  codigoPostal    String?
+  telefono        String?
+  email           String?
+  actividadPrincipal String?
+  convenioId      String?
+  estudioId       String
+  activa          Boolean  @default(true)
+  fechaInicio     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  convenio   Convenio? @relation(fields: [convenioId], references: [id])
+  estudio    Estudio   @relation(fields: [estudioId], references: [id])
+  empleados  Empleado[]
+  periodos   PeriodoLiquidacion[]
+  documentos Documento[]
+
+  @@map("empresas")
+}
+
+// ─── EMPLEADOS (LEGAJOS) ─────────────────────────────────────────────────────
+
+model Empleado {
+  id              String   @id @default(uuid())
+  empresaId       String
+  legajoNumero    String?
+  apellido        String
+  nombre          String
+  cuil            String
+  dni             String?
+  fechaNacimiento DateTime?
+  sexo            String?
+  estadoCivil     String?
+  domicilio       String?
+  localidad       String?
+  provincia       String?
+  codigoPostal    String?
+  telefono        String?
+  email           String?
+  cbu             String?
+  banco           String?
+  fechaIngreso    DateTime
+  fechaEgreso     DateTime?
+  motivoEgreso    MotivoEgreso?
+  categoria       String?
+  puesto          String?
+  modalidadContrato ModalidadContrato @default(TIEMPO_INDETERMINADO)
+  jornadaTrabajo  TipoJornada @default(COMPLETA)
+  horasSemanales  Decimal?  @db.Decimal(5, 2)
+  basicoMensual   Decimal   @db.Decimal(12, 2) @default(0)
+  obraSocialCodigo String?
+  obraSocialNombre String?
+  afiliado        Boolean   @default(true)
+  activo          Boolean   @default(true)
+  observaciones   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  empresa        Empresa       @relation(fields: [empresaId], references: [id])
+  liquidaciones  Liquidacion[]
+  documentos     Documento[]
+  novedades      NovedadEmpleado[]
+
+  @@unique([empresaId, cuil])
+  @@map("empleados")
+}
+
+enum ModalidadContrato {
+  TIEMPO_INDETERMINADO
+  PLAZO_FIJO
+  EVENTUAL
+  PASANTIA
+  APRENDIZAJE
+}
+
+enum TipoJornada {
+  COMPLETA
+  PART_TIME
+  TIEMPO_PARCIAL
+}
+
+enum MotivoEgreso {
+  RENUNCIA
+  DESPIDO_SIN_CAUSA
+  DESPIDO_CON_CAUSA
+  MUTUO_ACUERDO
+  JUBILACION
+  FALLECIMIENTO
+  VENCIMIENTO_CONTRATO
+}
+
+// ─── NOVEDADES DE EMPLEADOS ───────────────────────────────────────────────────
+
+model NovedadEmpleado {
+  id          String   @id @default(uuid())
+  empleadoId  String
+  tipo        TipoNovedad
+  descripcion String
+  fechaDesde  DateTime
+  fechaHasta  DateTime?
+  valor       Decimal?  @db.Decimal(12, 2)
+  documentoId String?
+  createdAt   DateTime  @default(now())
+
+  empleado  Empleado   @relation(fields: [empleadoId], references: [id])
+  documento Documento? @relation(fields: [documentoId], references: [id])
+
+  @@map("novedades_empleados")
+}
+
+enum TipoNovedad {
+  ALTA
+  BAJA
+  MODIFICACION_SUELDO
+  CAMBIO_CATEGORIA
+  LICENCIA
+  VACACIONES
+  SUSPENSION
+  EMBARGO
+}
+
+// ─── CONCEPTOS DE LIQUIDACIÓN ─────────────────────────────────────────────────
+
+model Concepto {
+  id            String   @id @default(uuid())
+  convenioId    String?
+  codigo        String
+  nombre        String
+  descripcion   String?
+  tipo          TipoConcepto
+  naturaleza    NaturalezaConcepto
+  unidad        UnidadConcepto   @default(IMPORTE)
+  formula       String?
+  porcentaje    Decimal?  @db.Decimal(8, 4)
+  importe       Decimal?  @db.Decimal(12, 2)
+  imprimible    Boolean  @default(true)
+  remunerativo  Boolean  @default(true)
+  orden         Int      @default(0)
+  activo        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  convenio       Convenio? @relation(fields: [convenioId], references: [id])
+  detalles       DetalleLiquidacion[]
+
+  @@unique([convenioId, codigo])
+  @@map("conceptos")
+}
+
+enum TipoConcepto {
+  REMUNERATIVO
+  NO_REMUNERATIVO
+  DEDUCCION
+  APORTE_EMPLEADOR
+}
+
+enum NaturalezaConcepto {
+  HABER
+  DESCUENTO
+  INFORMATIVO
+}
+
+enum UnidadConcepto {
+  IMPORTE
+  PORCENTAJE
+  HORAS
+  DIAS
+  CANTIDAD
+}
+
+// ─── PERÍODOS DE LIQUIDACIÓN ──────────────────────────────────────────────────
+
+model PeriodoLiquidacion {
+  id            String   @id @default(uuid())
+  empresaId     String
+  anio          Int
+  mes           Int
+  tipo          TipoLiquidacion @default(MENSUAL)
+  estado        EstadoPeriodo   @default(ABIERTO)
+  fechaCierre   DateTime?
+  observaciones String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa       Empresa       @relation(fields: [empresaId], references: [id])
+  liquidaciones Liquidacion[]
+
+  @@unique([empresaId, anio, mes, tipo])
+  @@map("periodos_liquidacion")
+}
+
+enum TipoLiquidacion {
+  MENSUAL
+  SAC_JUNIO
+  SAC_DICIEMBRE
+  VACACIONES
+  LIQUIDACION_FINAL
+  COMPLEMENTO
+  RETROACTIVO
+}
+
+enum EstadoPeriodo {
+  ABIERTO
+  PROCESADO
+  CERRADO
+}
+
+// ─── LIQUIDACIONES (CABECERA) ─────────────────────────────────────────────────
+
+model Liquidacion {
+  id                 String   @id @default(uuid())
+  periodoId          String
+  empleadoId         String
+  anio               Int
+  mes                Int
+  tipo               TipoLiquidacion
+  diasTrabajados     Decimal  @db.Decimal(5, 2) @default(0)
+  diasNoTrabajados   Decimal  @db.Decimal(5, 2) @default(0)
+  horasTrabajadas    Decimal  @db.Decimal(7, 2) @default(0)
+  totalHaberes       Decimal  @db.Decimal(12, 2) @default(0)
+  totalDescuentos    Decimal  @db.Decimal(12, 2) @default(0)
+  totalNeto          Decimal  @db.Decimal(12, 2) @default(0)
+  totalContribuciones Decimal @db.Decimal(12, 2) @default(0)
+  estado             EstadoLiquidacion @default(BORRADOR)
+  observaciones      String?
+  reciboPdfUrl       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  periodo   PeriodoLiquidacion @relation(fields: [periodoId], references: [id])
+  empleado  Empleado           @relation(fields: [empleadoId], references: [id])
+  detalles  DetalleLiquidacion[]
+
+  @@unique([periodoId, empleadoId])
+  @@map("liquidaciones")
+}
+
+enum EstadoLiquidacion {
+  BORRADOR
+  CALCULADO
+  CONFIRMADO
+  ANULADO
+}
+
+// ─── DETALLE DE LIQUIDACIÓN ───────────────────────────────────────────────────
+
+model DetalleLiquidacion {
+  id             String   @id @default(uuid())
+  liquidacionId  String
+  conceptoId     String
+  descripcion    String
+  cantidad       Decimal? @db.Decimal(10, 4)
+  valorUnitario  Decimal? @db.Decimal(12, 2)
+  importe        Decimal  @db.Decimal(12, 2)
+  naturaleza     NaturalezaConcepto
+  tipo           TipoConcepto
+  remunerativo   Boolean  @default(true)
+  orden          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  liquidacion Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+  concepto    Concepto    @relation(fields: [conceptoId], references: [id])
+
+  @@map("detalle_liquidaciones")
+}
+
+// ─── DOCUMENTOS ADJUNTOS ──────────────────────────────────────────────────────
+
+model Documento {
+  id          String   @id @default(uuid())
+  empresaId   String?
+  empleadoId  String?
+  tipo        TipoDocumento
+  nombre      String
+  descripcion String?
+  url         String
+  mimeType    String?
+  tamanio     Int?
+  anio        Int?
+  mes         Int?
+  createdAt   DateTime @default(now())
+
+  empresa   Empresa?   @relation(fields: [empresaId], references: [id])
+  empleado  Empleado?  @relation(fields: [empleadoId], references: [id])
+  novedades NovedadEmpleado[]
+
+  @@map("documentos")
+}
+
+enum TipoDocumento {
+  RECIBO_SUELDO
+  LSD
+  F931
+  ALTA_EMPLEADO
+  BAJA_EMPLEADO
+  CONTRATO
+  DNI
+  CUIL
+  CERTIFICADO_TRABAJO
+  ART80_LCT
+  OTRO
+}
