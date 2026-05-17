@@ -13,7 +13,6 @@ async function main() {
       cuit: '20-12345678-9',
       matricula: 'CP 12345',
       direccion: 'Av. Corrientes 1234, Piso 3',
-      localidad: 'Buenos Aires',
       email: 'admin@estudiodemo.com',
       telefono: '011-4321-5678',
     },
@@ -185,6 +184,86 @@ async function main() {
       where: { empresaId_cuil: { empresaId: empresa.id, cuil: emp.cuil } },
       update: {},
       create: { ...emp, empresaId: empresa.id },
+    });
+  }
+
+  // Parámetros fiscales demo (valores 2024)
+  const parametrosDemo = [
+    { clave: 'TOPE_ANSES', valor: '1700000', descripcion: 'Tope base imponible ANSeS' },
+    { clave: 'MINIMO_NO_IMPONIBLE', valor: '1000000', descripcion: 'MNI Ganancias 4ta categoría' },
+    { clave: 'ALICUOTA_IVA_GENERAL', valor: '21', descripcion: 'Alícuota IVA general (%)' },
+    { clave: 'ALICUOTA_IVA_REDUCIDA', valor: '10.5', descripcion: 'Alícuota IVA reducida (%)' },
+    { clave: 'ALICUOTA_IVA_DIFERENCIAL', valor: '27', descripcion: 'Alícuota IVA diferencial (%)' },
+    { clave: 'PORCENTAJE_SINDICATO', valor: '2', descripcion: 'Descuento sindical (%)' },
+    { clave: 'PORCENTAJE_CUOTA_SOLIDARIA', valor: '1', descripcion: 'Cuota solidaria sindical (%)' },
+    { clave: 'PORCENTAJE_ART', valor: '2.5', descripcion: 'Alícuota ART empleador (%)' },
+  ];
+
+  for (const p of parametrosDemo) {
+    const existing = await prisma.parametroFiscal.findFirst({
+      where: { estudioId: estudio.id, clave: p.clave },
+    });
+    if (!existing) {
+      await prisma.parametroFiscal.create({
+        data: { estudioId: estudio.id, ...p },
+      });
+    }
+  }
+
+  // Ejercicios contables demo
+  for (const [anioEj, nombre, estado] of [['2025', 'Ejercicio 2025', 'CERRADO'], ['2026', 'Ejercicio 2026', 'ABIERTO']]) {
+    const existing = await prisma.ejercicioContable.findFirst({ where: { empresaId: empresa.id, nombre } });
+    if (!existing) {
+      await prisma.ejercicioContable.create({
+        data: { empresaId: empresa.id, nombre, fechaInicio: new Date(`${anioEj}-01-01`), estado },
+      });
+    }
+  }
+
+  // Plan de cuentas básico (necesario para auto-asientos)
+  const cuentasBase = [
+    // ACTIVO
+    { codigo: '1', nombre: 'ACTIVO', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 1, permiteMovimientos: false },
+    { codigo: '1.1', nombre: 'Caja y Bancos', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '1.1.1', nombre: 'Caja', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '1.1.2', nombre: 'Banco Cuenta Corriente', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '1.2', nombre: 'Créditos', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '1.2.1', nombre: 'Clientes', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '1.2.2', nombre: 'Cuentas a Cobrar', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '1.2.3', nombre: 'IVA Crédito Fiscal', tipo: 'ACTIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    // PASIVO
+    { codigo: '2', nombre: 'PASIVO', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 1, permiteMovimientos: false },
+    { codigo: '2.1', nombre: 'Deudas Comerciales', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '2.1.1', nombre: 'Proveedores', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    { codigo: '2.1.2', nombre: 'Cuentas a Pagar', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    { codigo: '2.2', nombre: 'Deudas Laborales', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '2.2.1', nombre: 'Sueldos y Jornales a Pagar', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    { codigo: '2.2.2', nombre: 'Aportes Empleados a Depositar', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    { codigo: '2.2.3', nombre: 'Cargas Sociales Empleador a Pagar', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    { codigo: '2.3', nombre: 'Deudas Fiscales', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '2.3.1', nombre: 'IVA Débito Fiscal', tipo: 'PASIVO', naturaleza: 'ACREEDORA', nivel: 3 },
+    // PATRIMONIO NETO
+    { codigo: '3', nombre: 'PATRIMONIO NETO', tipo: 'PATRIMONIO_NETO', naturaleza: 'ACREEDORA', nivel: 1, permiteMovimientos: false },
+    { codigo: '3.1', nombre: 'Capital Social', tipo: 'PATRIMONIO_NETO', naturaleza: 'ACREEDORA', nivel: 2 },
+    { codigo: '3.2', nombre: 'Resultados No Distribuidos', tipo: 'PATRIMONIO_NETO', naturaleza: 'ACREEDORA', nivel: 2 },
+    // RESULTADO POSITIVO (Ingresos)
+    { codigo: '4', nombre: 'INGRESOS', tipo: 'RESULTADO_POSITIVO', naturaleza: 'ACREEDORA', nivel: 1, permiteMovimientos: false },
+    { codigo: '4.1', nombre: 'Ventas', tipo: 'RESULTADO_POSITIVO', naturaleza: 'ACREEDORA', nivel: 2 },
+    { codigo: '4.2', nombre: 'Otros Ingresos', tipo: 'RESULTADO_POSITIVO', naturaleza: 'ACREEDORA', nivel: 2 },
+    // RESULTADO NEGATIVO (Gastos)
+    { codigo: '5', nombre: 'GASTOS', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 1, permiteMovimientos: false },
+    { codigo: '5.1', nombre: 'Costo de Ventas / Compras', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 2 },
+    { codigo: '5.2', nombre: 'Gastos de Personal', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 2, permiteMovimientos: false },
+    { codigo: '5.2.1', nombre: 'Sueldos y Jornales', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '5.2.2', nombre: 'Cargas Sociales Empleador', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 3 },
+    { codigo: '5.3', nombre: 'Gastos Generales', tipo: 'RESULTADO_NEGATIVO', naturaleza: 'DEUDORA', nivel: 2 },
+  ];
+
+  for (const c of cuentasBase) {
+    await prisma.cuentaContable.upsert({
+      where: { empresaId_codigo: { empresaId: empresa.id, codigo: c.codigo } },
+      update: {},
+      create: { ...c, empresaId: empresa.id, permiteMovimientos: c.permiteMovimientos ?? true },
     });
   }
 

@@ -5,6 +5,8 @@ dayjs.locale('es');
 export const formatMoney = (n) =>
   `$ ${Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+export const formatCurrency = formatMoney;
+
 export const formatDate = (d) => d ? dayjs(d).format('DD/MM/YYYY') : '-';
 
 export const MESES = [
@@ -13,6 +15,18 @@ export const MESES = [
 ];
 
 export const mesNombre = (m) => MESES[(m || 1) - 1];
+
+// Lista de años dinámica: desde (currentYear - back) hasta (currentYear + forward), desc.
+// Útil para dropdowns sin años hardcoded.
+export const aniosRecientes = (back = 5, forward = 1) => {
+  const now = new Date().getFullYear();
+  const out = [];
+  for (let y = now + forward; y >= now - back; y--) out.push(y);
+  return out;
+};
+
+export const anioActual = () => new Date().getFullYear();
+export const mesActual = () => new Date().getMonth() + 1;
 
 export const estadoLiquidacionLabel = {
   BORRADOR: { label: 'Borrador', cls: 'badge-gray' },

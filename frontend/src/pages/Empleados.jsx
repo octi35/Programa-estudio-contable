@@ -190,7 +190,8 @@ export default function Empleados() {
         {loading ? (
           <div className="p-8 text-center"><div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" /></div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
               <tr>
                 <th className="px-5 py-3 text-left">Empleado</th>
@@ -240,6 +241,7 @@ export default function Empleados() {
               )}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

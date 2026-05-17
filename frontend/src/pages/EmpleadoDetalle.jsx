@@ -1,11 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, CalculatorIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, CalculatorIcon, DocumentTextIcon, UserIcon, BriefcaseIcon, UsersIcon, ClipboardDocumentListIcon, ClockIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../api/client';
 import Modal from '../components/Modal';
+import { confirm } from '../components/confirm';
+import { openAuthed } from '../utils/download';
 import { formatDate, formatMoney, mesNombre, estadoLiquidacionLabel, tipoLiquidacionLabel } from '../utils/format';
+
+const TABS = [
+  { id: 'personal', label: 'Datos Personales', icon: UserIcon },
+  { id: 'laboral', label: 'Laboral / AFIP', icon: BriefcaseIcon },
+  { id: 'familiares', label: 'Familiares', icon: UsersIcon },
+  { id: 'novedades', label: 'Novedades', icon: ClipboardDocumentListIcon },
+  { id: 'historial', label: 'Historial', icon: ClockIcon },
+];
 
 function BajaForm({ onSuccess, onClose }) {
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
@@ -40,26 +51,539 @@ function BajaForm({ onSuccess, onClose }) {
   );
 }
 
+function FamiliarForm({ empleadoId, familiar, onSuccess, onClose }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+    defaultValues: familiar || {},
+  });
+
+  const onSubmit = async (data) => {
+    try {
+      if (familiar?.id) {
+        await api.put(`/familiares/${familiar.id}`, { ...data, empleadoId });
+      } else {
+        await api.post('/familiares', { ...data, empleadoId });
+      }
+      toast.success(familiar ? 'Familiar actualizado' : 'Familiar agregado');
+      onSuccess();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al guardar');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Apellido *</label>
+          <input className="input" {...register('apellido', { required: 'Requerido' })} />
+          {errors.apellido && <p className="text-red-500 text-xs mt-1">{errors.apellido.message}</p>}
+        </div>
+        <div>
+          <label className="label">Nombre *</label>
+          <input className="input" {...register('nombre', { required: 'Requerido' })} />
+          {errors.nombre && <p className="text-red-500 text-xs mt-1">{errors.nombre.message}</p>}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Parentesco *</label>
+          <select className="input" {...register('parentesco', { required: 'Requerido' })}>
+            <option value="">Seleccionar...</option>
+            <option value="CONYUGE">Cónyuge</option>
+            <option value="HIJO">Hijo</option>
+            <option value="HIJA">Hija</option>
+            <option value="PADRE">Padre</option>
+            <option value="MADRE">Madre</option>
+            <option value="OTRO">Otro</option>
+          </select>
+          {errors.parentesco && <p className="text-red-500 text-xs mt-1">{errors.parentesco.message}</p>}
+        </div>
+        <div>
+          <label className="label">DNI</label>
+          <input className="input" placeholder="Sin puntos" {...register('dni')} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">CUIL</label>
+          <input className="input" placeholder="XX-XXXXXXXX-X" {...register('cuil')} />
+        </div>
+        <div>
+          <label className="label">Fecha de nacimiento</label>
+          <input type="date" className="input" {...register('fechaNacimiento')} />
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input type="checkbox" id="discapacidad" {...register('discapacidad')} className="rounded" />
+        <label htmlFor="discapacidad" className="text-sm text-gray-700">Tiene discapacidad (deducción especial AFIP)</label>
+      </div>
+      <div className="flex justify-end gap-3 pt-2">
+        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+        <button type="submit" disabled={isSubmitting} className="btn-primary">
+          {isSubmitting ? 'Guardando...' : 'Guardar'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function NovedadForm({ empleadoId, onSuccess, onClose }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
+
+  const onSubmit = async (data) => {
+    try {
+      await api.post('/empleados/novedades/masiva', {
+        empleadoIds: [empleadoId],
+        tipo: data.tipo,
+        importe: data.importe ? Number(data.importe) : undefined,
+        cantidad: data.cantidad ? Number(data.cantidad) : undefined,
+        descripcion: data.descripcion,
+        fechaDesde: data.fechaDesde,
+        fechaHasta: data.fechaHasta || null,
+      });
+      toast.success('Novedad registrada');
+      onSuccess();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al guardar');
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+      <div>
+        <label className="label">Tipo de novedad *</label>
+        <select className="input" {...register('tipo', { required: 'Requerido' })}>
+          <option value="">Seleccionar...</option>
+          <option value="ALTA">Alta</option>
+          <option value="BAJA">Baja</option>
+          <option value="CAMBIO_CATEGORIA">Cambio de categoría</option>
+          <option value="CAMBIO_BASICO">Cambio de básico</option>
+          <option value="HORA_EXTRA">Hora extra</option>
+          <option value="ADELANTO_SUELDO">Adelanto de sueldo</option>
+          <option value="LICENCIA">Licencia</option>
+          <option value="SUSPENSION">Suspensión</option>
+          <option value="VACACIONES">Vacaciones</option>
+          <option value="DIAS_TRABAJADOS">Días trabajados</option>
+          <option value="DIAS_NO_REMUNERATIVOS">Días no remunerativos</option>
+          <option value="OBRA_SOCIAL_PREPAGA">Obra social prepaga</option>
+          <option value="SINDICATO">Sindicato</option>
+          <option value="PERSONALIZADA">Personalizada</option>
+        </select>
+        {errors.tipo && <p className="text-red-500 text-xs mt-1">{errors.tipo.message}</p>}
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Fecha desde *</label>
+          <input type="date" className="input" {...register('fechaDesde', { required: 'Requerido' })} />
+          {errors.fechaDesde && <p className="text-red-500 text-xs mt-1">{errors.fechaDesde.message}</p>}
+        </div>
+        <div>
+          <label className="label">Fecha hasta</label>
+          <input type="date" className="input" {...register('fechaHasta')} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Importe</label>
+          <input type="number" step="0.01" className="input" {...register('importe')} />
+        </div>
+        <div>
+          <label className="label">Cantidad</label>
+          <input type="number" step="0.01" className="input" {...register('cantidad')} />
+        </div>
+      </div>
+      <div>
+        <label className="label">Descripción</label>
+        <input className="input" {...register('descripcion')} />
+      </div>
+      <div className="flex justify-end gap-3 pt-2">
+        <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
+        <button type="submit" disabled={isSubmitting} className="btn-primary">
+          {isSubmitting ? 'Guardando...' : 'Guardar'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ── Tab: Datos Personales ──────────────────────────────────────────────────────
+function TabPersonal({ empleado }) {
+  const fields = [
+    ['N° Legajo', empleado.legajoNumero || '—'],
+    ['DNI', empleado.dni || '—'],
+    ['CUIL', empleado.cuil || '—'],
+    ['Fecha nacimiento', formatDate(empleado.fechaNacimiento)],
+    ['Sexo', empleado.sexo === 'M' ? 'Masculino' : empleado.sexo === 'F' ? 'Femenino' : empleado.sexo || '—'],
+    ['Estado civil', empleado.estadoCivil || '—'],
+    ['Nacionalidad', empleado.nacionalidad || '—'],
+    ['Teléfono', empleado.telefono || '—'],
+    ['Email', empleado.email || '—'],
+    ['Domicilio', empleado.domicilio || '—'],
+    ['Localidad', empleado.localidad || '—'],
+    ['Provincia', empleado.provincia || '—'],
+    ['Código postal', empleado.codigoPostal || '—'],
+  ];
+
+  return (
+    <div className="card p-6">
+      <h3 className="font-semibold text-gray-900 mb-4">Datos personales</h3>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {fields.map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-gray-400 text-xs mb-0.5">{k}</dt>
+            <dd className="font-medium text-gray-900 text-sm">{v}</dd>
+          </div>
+        ))}
+      </div>
+      {!empleado.activo && empleado.fechaEgreso && (
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+          <p className="font-medium text-red-800">Empleado dado de baja</p>
+          <p className="text-red-600">
+            Fecha egreso: {formatDate(empleado.fechaEgreso)} · Motivo: {empleado.motivoEgreso?.replace(/_/g, ' ')}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Laboral / AFIP ────────────────────────────────────────────────────────
+function TabLaboral({ empleado }) {
+  const fields = [
+    ['Empresa', empleado.empresa?.razonSocial],
+    ['Sucursal', empleado.sucursal?.nombre || '—'],
+    ['Convenio', empleado.convenio?.nombre || empleado.empresa?.convenio?.nombre || '—'],
+    ['Fecha ingreso', formatDate(empleado.fechaIngreso)],
+    ['Categoría', empleado.categoria || '—'],
+    ['Puesto', empleado.puesto || '—'],
+    ['Modalidad contrato', empleado.modalidadContrato?.replace(/_/g, ' ') || '—'],
+    ['Jornada', empleado.jornadaTrabajo?.replace(/_/g, ' ') || '—'],
+    ['Básico mensual', formatMoney(empleado.basicoMensual)],
+    ['Obra social', empleado.obraSocialNombre || '—'],
+    ['Código obra social', empleado.obraSocialCodigo || '—'],
+    ['Sindicato', empleado.sindicatoCodigo || '—'],
+    ['CBU', empleado.cbu || '—'],
+    ['Banco', empleado.banco || '—'],
+    ['Nro cuenta', empleado.nroCuenta || '—'],
+    ['Antigüedad', `${empleado.antiguedadAnios ?? 0} años ${(empleado.antiguedadMeses ?? 0) % 12} meses`],
+  ];
+
+  return (
+    <div className="card p-6">
+      <h3 className="font-semibold text-gray-900 mb-4">Datos laborales y AFIP</h3>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {fields.map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-gray-400 text-xs mb-0.5">{k}</dt>
+            <dd className="font-medium text-gray-900 text-sm">{v}</dd>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Tab: Familiares ────────────────────────────────────────────────────────────
+function TabFamiliares({ empleadoId }) {
+  const [familiares, setFamiliares] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [editando, setEditando] = useState(null);
+
+  const cargar = () => {
+    api.get(`/empleados/${empleadoId}/familiares`)
+      .then(r => setFamiliares(r.data))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { cargar(); }, [empleadoId]);
+
+  const eliminar = async (id) => {
+    if (!await confirm({
+      title: 'Eliminar familiar a cargo',
+      message: 'Se eliminará al familiar de la nómina del empleado.',
+      details: 'Esto puede afectar el cálculo de asignaciones familiares y deducción de Ganancias.',
+      confirmText: 'Eliminar',
+      danger: true,
+    })) return;
+    try {
+      await api.delete(`/familiares/${id}`);
+      toast.success('Familiar eliminado');
+      cargar();
+    } catch {
+      toast.error('Error al eliminar');
+    }
+  };
+
+  const PARENTESCO = { CONYUGE: 'Cónyuge', HIJO: 'Hijo', HIJA: 'Hija', PADRE: 'Padre', MADRE: 'Madre', OTRO: 'Otro' };
+
+  if (loading) return <div className="p-8 text-center text-gray-400">Cargando...</div>;
+
+  return (
+    <div className="card">
+      <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 className="font-semibold text-gray-900">Familiares a cargo</h3>
+        <button className="btn-primary text-xs" onClick={() => { setEditando(null); setModal(true); }}>
+          + Agregar familiar
+        </button>
+      </div>
+      {familiares.length === 0 ? (
+        <p className="px-6 py-8 text-center text-gray-400">Sin familiares registrados</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th className="px-5 py-3 text-left">Apellido y nombre</th>
+              <th className="px-5 py-3 text-left">Parentesco</th>
+              <th className="px-5 py-3 text-left">DNI</th>
+              <th className="px-5 py-3 text-left">Nacimiento</th>
+              <th className="px-5 py-3 text-left">Discapacidad</th>
+              <th className="px-5 py-3"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {familiares.map(f => (
+              <tr key={f.id} className="hover:bg-gray-50">
+                <td className="px-5 py-3 font-medium">{f.apellido}, {f.nombre}</td>
+                <td className="px-5 py-3">{PARENTESCO[f.parentesco] || f.parentesco}</td>
+                <td className="px-5 py-3 text-gray-500">{f.dni || '—'}</td>
+                <td className="px-5 py-3 text-gray-500">{formatDate(f.fechaNacimiento)}</td>
+                <td className="px-5 py-3">{f.discapacidad ? <span className="badge-blue">Sí</span> : '—'}</td>
+                <td className="px-5 py-3 text-right space-x-2">
+                  <button className="text-blue-600 text-xs hover:underline" onClick={() => { setEditando(f); setModal(true); }}>Editar</button>
+                  <button className="text-red-500 text-xs hover:underline" onClick={() => eliminar(f.id)}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {modal && (
+        <Modal onClose={() => setModal(false)} title={editando ? 'Editar familiar' : 'Agregar familiar'}>
+          <FamiliarForm
+            empleadoId={empleadoId}
+            familiar={editando}
+            onSuccess={() => { setModal(false); cargar(); }}
+            onClose={() => setModal(false)}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Novedades ─────────────────────────────────────────────────────────────
+function TabNovedades({ empleado }) {
+  const [modal, setModal] = useState(false);
+  const [novedades, setNovedades] = useState(empleado.novedades || []);
+
+  const recargar = () => {
+    api.get(`/empleados/${empleado.id}`).then(r => setNovedades(r.data.novedades || []));
+  };
+
+  const TIPO_LABEL = {
+    ALTA: 'Alta', BAJA: 'Baja', CAMBIO_CATEGORIA: 'Cambio categoría', CAMBIO_BASICO: 'Cambio básico',
+    HORA_EXTRA: 'Hora extra', ADELANTO_SUELDO: 'Adelanto sueldo', LICENCIA: 'Licencia',
+    SUSPENSION: 'Suspensión', VACACIONES: 'Vacaciones', DIAS_TRABAJADOS: 'Días trabajados',
+    DIAS_NO_REMUNERATIVOS: 'Días no rem.', OBRA_SOCIAL_PREPAGA: 'Obra social prepaga',
+    SINDICATO: 'Sindicato', PERSONALIZADA: 'Personalizada',
+  };
+
+  return (
+    <div className="card">
+      <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+        <h3 className="font-semibold text-gray-900">Novedades del empleado</h3>
+        <button className="btn-primary text-xs" onClick={() => setModal(true)}>+ Nueva novedad</button>
+      </div>
+      {novedades.length === 0 ? (
+        <p className="px-6 py-8 text-center text-gray-400">Sin novedades registradas</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th className="px-5 py-3 text-left">Tipo</th>
+              <th className="px-5 py-3 text-left">Descripción</th>
+              <th className="px-5 py-3 text-left">Desde</th>
+              <th className="px-5 py-3 text-left">Hasta</th>
+              <th className="px-5 py-3 text-right">Importe</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {novedades.map(n => (
+              <tr key={n.id} className="hover:bg-gray-50">
+                <td className="px-5 py-3 font-medium">{TIPO_LABEL[n.tipo] || n.tipo.replace(/_/g, ' ')}</td>
+                <td className="px-5 py-3 text-gray-500">{n.descripcion || '—'}</td>
+                <td className="px-5 py-3 text-gray-500">{formatDate(n.fechaDesde)}</td>
+                <td className="px-5 py-3 text-gray-500">{n.fechaHasta ? formatDate(n.fechaHasta) : 'Vigente'}</td>
+                <td className="px-5 py-3 text-right font-medium">{n.importe ? formatMoney(n.importe) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {modal && (
+        <Modal onClose={() => setModal(false)} title="Nueva novedad">
+          <NovedadForm
+            empleadoId={empleado.id}
+            onSuccess={() => { setModal(false); recargar(); }}
+            onClose={() => setModal(false)}
+          />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ── Gráfico evolución salarial ─────────────────────────────────────────────────
+function GraficoSalarial({ empleadoId, meses = 12 }) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    api.get(`/empleados/${empleadoId}/historial-salarial`, { params: { meses } })
+      .then(r => setData(r.data.historial || []))
+      .catch(() => setData([]))
+      .finally(() => setLoading(false));
+  }, [empleadoId, meses]);
+
+  if (loading) return <div className="p-6 text-center text-gray-400 text-sm">Cargando gráfico...</div>;
+  if (!data.length) {
+    return (
+      <div className="card p-6">
+        <h3 className="font-semibold text-gray-900 mb-2 text-sm">Evolución salarial</h3>
+        <p className="text-gray-400 text-sm text-center py-6">Sin liquidaciones para graficar</p>
+      </div>
+    );
+  }
+
+  const fmt = (v) => `$${Number(v).toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
+
+  return (
+    <div className="card p-5">
+      <div className="mb-3">
+        <h3 className="font-semibold text-gray-900 text-sm">Evolución salarial — últimos {data.length} meses</h3>
+        <p className="text-xs text-gray-400 mt-0.5">Comparativa bruto / neto / aportes empleador</p>
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
+        <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey="periodo" tick={{ fontSize: 11 }} />
+          <YAxis tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
+          <Tooltip formatter={fmt} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Line type="monotone" dataKey="bruto" name="Sueldo Bruto" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+          <Line type="monotone" dataKey="neto" name="Sueldo Neto" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+          <Line type="monotone" dataKey="contribuciones" name="Aportes Empleador" stroke="#6b7280" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── Tab: Historial liquidaciones ───────────────────────────────────────────────
+function TabHistorial({ empleadoId, navigate }) {
+  const [liquidaciones, setLiquidaciones] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/empleados/${empleadoId}/liquidaciones`)
+      .then(r => setLiquidaciones(r.data))
+      .finally(() => setLoading(false));
+  }, [empleadoId]);
+
+  if (loading) return <div className="p-8 text-center text-gray-400">Cargando...</div>;
+
+  return (
+    <div className="space-y-5">
+    <GraficoSalarial empleadoId={empleadoId} meses={12} />
+    <div className="card">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Historial de liquidaciones</h3>
+        <button
+          onClick={() => navigate(`/liquidaciones?empleadoId=${empleadoId}`)}
+          className="btn-primary text-xs py-1.5">
+          <CalculatorIcon className="w-3.5 h-3.5 inline mr-1" /> Nueva liquidación
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+            <tr>
+              <th className="px-5 py-3 text-left">Período</th>
+              <th className="px-5 py-3 text-left">Tipo</th>
+              <th className="px-5 py-3 text-right">Haberes</th>
+              <th className="px-5 py-3 text-right">Descuentos</th>
+              <th className="px-5 py-3 text-right">Neto</th>
+              <th className="px-5 py-3 text-center">Estado</th>
+              <th className="px-5 py-3 text-center">Recibo</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {liquidaciones.map(liq => {
+              const est = estadoLiquidacionLabel[liq.estado] || { label: liq.estado, cls: 'badge-gray' };
+              return (
+                <tr key={liq.id} className="table-row-hover cursor-pointer"
+                  onClick={() => navigate(`/liquidaciones/${liq.id}`)}>
+                  <td className="px-5 py-3 font-medium">{mesNombre(liq.mes)} {liq.anio}</td>
+                  <td className="px-5 py-3 text-gray-500 text-xs">{tipoLiquidacionLabel[liq.tipo] || liq.tipo}</td>
+                  <td className="px-5 py-3 text-right text-green-700 font-medium">{formatMoney(liq.totalHaberes)}</td>
+                  <td className="px-5 py-3 text-right text-red-600">{formatMoney(liq.totalDescuentos)}</td>
+                  <td className="px-5 py-3 text-right font-bold text-gray-900">{formatMoney(liq.totalNeto)}</td>
+                  <td className="px-5 py-3 text-center"><span className={est.cls}>{est.label}</span></td>
+                  <td className="px-5 py-3 text-center">
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        openAuthed(`/api/liquidaciones/${liq.id}/recibo`);
+                      }}
+                      className="text-blue-600 hover:text-blue-800">
+                      <DocumentTextIcon className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {liquidaciones.length === 0 && (
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">Sin liquidaciones registradas</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 export default function EmpleadoDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [empleado, setEmpleado] = useState(null);
-  const [liquidaciones, setLiquidaciones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [bajaModal, setBajaModal] = useState(false);
+  const [tab, setTab] = useState('personal');
 
   const cargar = () =>
-    Promise.all([
-      api.get(`/empleados/${id}`),
-      api.get(`/empleados/${id}/liquidaciones`),
-    ]).then(([e, l]) => {
-      setEmpleado(e.data);
-      setLiquidaciones(l.data);
-    }).finally(() => setLoading(false));
+    api.get(`/empleados/${id}`)
+      .then(r => setEmpleado(r.data))
+      .finally(() => setLoading(false));
 
   useEffect(() => { cargar(); }, [id]);
 
   const handleBaja = async (data) => {
+    if (!await confirm({
+      title: 'Dar de baja al empleado',
+      message: 'El empleado quedará marcado como INACTIVO y no será considerado en futuras liquidaciones.',
+      details: [
+        'Se registrará la fecha y motivo de baja en su legajo.',
+        'Las liquidaciones anteriores no se modifican.',
+        'Esta acción no se puede deshacer desde la pantalla de detalle.',
+      ],
+      confirmText: 'Dar de baja',
+      requireText: 'BAJA',
+      danger: true,
+    })) return;
     try {
       await api.post(`/empleados/${id}/baja`, data);
       toast.success('Baja registrada correctamente');
@@ -78,167 +602,63 @@ export default function EmpleadoDetalle() {
   if (!empleado) return <p className="text-gray-500">Empleado no encontrado</p>;
 
   const antiguedadAnios = empleado.antiguedadAnios ?? 0;
-  const antiguedadMeses = empleado.antiguedadMeses ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button onClick={() => navigate(-1)} className="btn-secondary p-2">
           <ArrowLeftIcon className="w-4 h-4" />
         </button>
-        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center font-bold text-blue-700 flex-shrink-0">
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${empleado.activo ? 'bg-blue-600' : 'bg-gray-400'}`}>
           {empleado.apellido[0]}{empleado.nombre[0]}
         </div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{empleado.apellido}, {empleado.nombre}</h1>
-          <p className="text-gray-500 text-sm">CUIL: {empleado.cuil} · {empleado.empresa?.razonSocial}</p>
+          <p className="text-gray-500 text-sm">
+            Legajo {empleado.legajoNumero || '—'} · CUIL: {empleado.cuil} · {empleado.empresa?.razonSocial}
+            {!empleado.activo && <span className="ml-2 badge-red">BAJA</span>}
+          </p>
         </div>
-        {empleado.activo && (
-          <button onClick={() => setBajaModal(true)} className="btn-danger">Registrar baja</button>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Datos personales */}
-        <div className="card p-5 lg:col-span-2 space-y-5">
-          <h2 className="font-semibold text-gray-900 border-b border-gray-100 pb-2">Datos del legajo</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            {[
-              ['N° Legajo', empleado.legajoNumero || '—'],
-              ['DNI', empleado.dni || '—'],
-              ['Fecha nacimiento', formatDate(empleado.fechaNacimiento)],
-              ['Sexo', empleado.sexo === 'M' ? 'Masculino' : empleado.sexo === 'F' ? 'Femenino' : empleado.sexo || '—'],
-              ['Estado civil', empleado.estadoCivil || '—'],
-              ['Teléfono', empleado.telefono || '—'],
-              ['Email', empleado.email || '—'],
-              ['Domicilio', empleado.domicilio || '—'],
-              ['Localidad', `${empleado.localidad || '—'}, ${empleado.provincia || ''}`.trim().replace(/,$/, '')],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-gray-400 text-xs mb-0.5">{k}</dt>
-                <dd className="font-medium text-gray-900 text-sm">{v}</dd>
-              </div>
-            ))}
-          </div>
-
-          <h2 className="font-semibold text-gray-900 border-b border-gray-100 pb-2 pt-2">Datos laborales</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-            {[
-              ['Empresa', empleado.empresa?.razonSocial],
-              ['Fecha ingreso', formatDate(empleado.fechaIngreso)],
-              ['Categoría', empleado.categoria || '—'],
-              ['Puesto', empleado.puesto || '—'],
-              ['Modalidad', empleado.modalidadContrato?.replace(/_/g, ' ')],
-              ['Jornada', empleado.jornadaTrabajo?.replace(/_/g, ' ')],
-              ['Básico mensual', formatMoney(empleado.basicoMensual)],
-              ['Obra social', empleado.obraSocialNombre || '—'],
-              ['CBU', empleado.cbu || '—'],
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-gray-400 text-xs mb-0.5">{k}</dt>
-                <dd className="font-medium text-gray-900 text-sm">{v}</dd>
-              </div>
-            ))}
-          </div>
-
-          {!empleado.activo && empleado.fechaEgreso && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
-              <p className="font-medium text-red-800">Empleado dado de baja</p>
-              <p className="text-red-600">Fecha egreso: {formatDate(empleado.fechaEgreso)} · Motivo: {empleado.motivoEgreso?.replace(/_/g, ' ')}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Stats y novedades */}
-        <div className="space-y-4">
-          <div className="card p-5 text-center">
-            <p className="text-3xl font-bold text-blue-700">{antiguedadAnios}</p>
-            <p className="text-sm text-gray-600 mt-1">años de antigüedad</p>
-            <p className="text-xs text-gray-400">{antiguedadMeses % 12} meses adicionales</p>
-          </div>
-          <div className="card p-5 text-center">
+        <div className="flex items-center gap-2">
+          <div className="text-right mr-2">
             <p className="text-2xl font-bold text-green-700">{formatMoney(empleado.basicoMensual)}</p>
-            <p className="text-sm text-gray-600 mt-1">Básico mensual</p>
+            <p className="text-xs text-gray-400">{antiguedadAnios} años antigüedad</p>
           </div>
-          <div className="card p-5 text-center">
-            <p className="text-2xl font-bold text-purple-700">{liquidaciones.length}</p>
-            <p className="text-sm text-gray-600 mt-1">Liquidaciones históricas</p>
-          </div>
-
-          {/* Novedades */}
-          {empleado.novedades?.length > 0 && (
-            <div className="card p-4">
-              <h3 className="font-semibold text-gray-800 text-sm mb-3">Novedades recientes</h3>
-              <div className="space-y-2">
-                {empleado.novedades.map(n => (
-                  <div key={n.id} className="text-xs border-l-2 border-blue-300 pl-2">
-                    <p className="font-medium text-gray-700">{n.tipo.replace(/_/g, ' ')}</p>
-                    <p className="text-gray-500">{n.descripcion}</p>
-                    <p className="text-gray-400">{formatDate(n.fechaDesde)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {empleado.activo && (
+            <button onClick={() => setBajaModal(true)} className="btn-danger">Registrar baja</button>
           )}
         </div>
       </div>
 
-      {/* Historial liquidaciones */}
-      <div className="card">
-        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-900">Historial de liquidaciones</h2>
-          <button
-            onClick={() => navigate(`/liquidaciones?empleadoId=${id}`)}
-            className="btn-primary text-xs py-1.5">
-            <CalculatorIcon className="w-3.5 h-3.5" /> Nueva liquidación
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
-              <tr>
-                <th className="px-5 py-3 text-left">Período</th>
-                <th className="px-5 py-3 text-left">Tipo</th>
-                <th className="px-5 py-3 text-right">Haberes</th>
-                <th className="px-5 py-3 text-right">Descuentos</th>
-                <th className="px-5 py-3 text-right">Neto</th>
-                <th className="px-5 py-3 text-center">Estado</th>
-                <th className="px-5 py-3 text-center">Recibo</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {liquidaciones.map(liq => {
-                const est = estadoLiquidacionLabel[liq.estado] || { label: liq.estado, cls: 'badge-gray' };
-                return (
-                  <tr key={liq.id} className="table-row-hover"
-                    onClick={() => navigate(`/liquidaciones/${liq.id}`)}>
-                    <td className="px-5 py-3 font-medium">{mesNombre(liq.mes)} {liq.anio}</td>
-                    <td className="px-5 py-3 text-gray-500 text-xs">{tipoLiquidacionLabel[liq.tipo] || liq.tipo}</td>
-                    <td className="px-5 py-3 text-right text-green-700 font-medium">{formatMoney(liq.totalHaberes)}</td>
-                    <td className="px-5 py-3 text-right text-red-600">{formatMoney(liq.totalDescuentos)}</td>
-                    <td className="px-5 py-3 text-right font-bold text-gray-900">{formatMoney(liq.totalNeto)}</td>
-                    <td className="px-5 py-3 text-center"><span className={est.cls}>{est.label}</span></td>
-                    <td className="px-5 py-3 text-center">
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          window.open(`/api/liquidaciones/${liq.id}/recibo`, '_blank');
-                        }}
-                        className="text-blue-600 hover:text-blue-800">
-                        <DocumentTextIcon className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {liquidaciones.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-gray-400">Sin liquidaciones registradas</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-1 -mb-px overflow-x-auto">
+          {TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors ${
+                  tab === t.id
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}>
+                <Icon className="w-4 h-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
       </div>
+
+      {/* Tab content */}
+      {tab === 'personal' && <TabPersonal empleado={empleado} />}
+      {tab === 'laboral' && <TabLaboral empleado={empleado} />}
+      {tab === 'familiares' && <TabFamiliares empleadoId={id} />}
+      {tab === 'novedades' && <TabNovedades empleado={empleado} />}
+      {tab === 'historial' && <TabHistorial empleadoId={id} navigate={navigate} />}
 
       <Modal open={bajaModal} onClose={() => setBajaModal(false)} title="Registrar baja de empleado">
         <BajaForm onSuccess={handleBaja} onClose={() => setBajaModal(false)} />

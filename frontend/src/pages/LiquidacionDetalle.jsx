@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, DocumentTextIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, DocumentTextIcon, CheckCircleIcon, EnvelopeIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import api from '../api/client';
+import { openAuthed } from '../utils/download';
 import { formatMoney, formatDate, mesNombre, estadoLiquidacionLabel, tipoLiquidacionLabel } from '../utils/format';
 
 function ConceptoRow({ d, esDescuento }) {
@@ -46,7 +47,19 @@ export default function LiquidacionDetalle() {
     }
   };
 
-  const abrirRecibo = () => window.open(`/api/liquidaciones/${id}/recibo`, '_blank');
+  const abrirRecibo = () => openAuthed(`/api/liquidaciones/${id}/recibo`);
+
+  const enviarEmail = async () => {
+    const emailDest = liq?.empleado?.email;
+    const emailInput = emailDest || window.prompt('El empleado no tiene email registrado. Ingrese el email de destino:');
+    if (!emailInput) return;
+    try {
+      await api.post(`/liquidaciones/${id}/enviar-recibo`, { email: emailInput });
+      toast.success(`Recibo enviado a ${emailInput}`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al enviar email. Verifique la configuración SMTP.');
+    }
+  };
 
   if (loading) return (
     <div className="flex justify-center p-12">
@@ -86,6 +99,19 @@ export default function LiquidacionDetalle() {
         <button onClick={abrirRecibo} className="btn-secondary">
           <DocumentTextIcon className="w-4 h-4" /> Ver recibo PDF
         </button>
+        {liq.estado === 'CONFIRMADO' && (
+          <button onClick={enviarEmail} className="btn-secondary">
+            <EnvelopeIcon className="w-4 h-4" /> Enviar por email
+          </button>
+        )}
+        {liq.periodo?.estado === 'CERRADO' && empresa?.id && (
+          <button
+            onClick={() => openAuthed(`/api/reportes/f931?empresaId=${empresa.id}&anio=${liq.anio}&mes=${liq.mes}`)}
+            className="btn-secondary"
+            title="Descargar F.931 (Excel) del período cerrado">
+            <ArrowDownTrayIcon className="w-4 h-4" /> Descargar F.931
+          </button>
+        )}
       </div>
 
       {/* Info cabecera */}

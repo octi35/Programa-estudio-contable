@@ -1,11 +1,10 @@
+const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
 const { body, param } = require('express-validator');
-const { PrismaClient } = require('@prisma/client');
 const { auth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
-const prisma = new PrismaClient();
 
 // GET /api/conceptos
 router.get('/', auth, async (req, res, next) => {

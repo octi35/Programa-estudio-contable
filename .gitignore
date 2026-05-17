@@ -5,3 +5,10 @@ build/
 uploads/
 *.log
 .DS_Store
+
+# Claude Code (config local del desarrollador)
+.claude/
+
+# Editores
+.vscode/
+.idea/

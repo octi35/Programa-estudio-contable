@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../context/AuthContext';
 import { CalculatorIcon } from '@heroicons/react/24/outline';
@@ -61,6 +61,12 @@ export default function Login() {
                 </span>
               ) : 'Ingresar'}
             </button>
+
+            <div className="text-center">
+              <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                ¿Olvidaste tu contraseña?
+              </Link>
+            </div>
           </form>
 
           <div className="mt-6 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">

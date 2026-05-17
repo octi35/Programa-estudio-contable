@@ -1,10 +1,12 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  html { @apply text-gray-900; }
-  body { @apply bg-gray-50 font-sans antialiased; }
+  html { @apply text-gray-900 bg-[#f6f8fc]; }
+  body { @apply bg-[#f6f8fc] font-sans antialiased; }
 }
 
 @layer components {
@@ -41,4 +43,18 @@
   .badge-yellow { @apply badge bg-yellow-100 text-yellow-800; }
   .badge-gray { @apply badge bg-gray-100 text-gray-700; }
   .table-row-hover { @apply hover:bg-blue-50 cursor-pointer transition-colors; }
+}
+
+/* Scroll horizontal automático en mobile para cualquier .card que contenga un <table>.
+   Usa :has() para no requerir tocar 30+ páginas con wrappers manuales. */
+@layer utilities {
+  .card:has(> table),
+  .card:has(> div > table:only-child) {
+    @apply overflow-x-auto;
+  }
+  /* Asegura que la tabla pueda crecer horizontalmente sin reventar el card */
+  .card > table,
+  .card > div > table {
+    @apply min-w-full;
+  }
 }

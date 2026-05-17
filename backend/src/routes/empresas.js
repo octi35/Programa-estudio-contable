@@ -1,11 +1,10 @@
+const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
 const { body, param, query } = require('express-validator');
-const { PrismaClient } = require('@prisma/client');
 const { auth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
 
-const prisma = new PrismaClient();
 
 const empresaValidations = [
   body('razonSocial').notEmpty().withMessage('Razón social requerida'),

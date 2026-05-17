@@ -1,13 +1,12 @@
+const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { PrismaClient } = require('@prisma/client');
 const { auth } = require('../middleware/auth');
 const lsdService = require('../services/lsdService');
 
-const prisma = new PrismaClient();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

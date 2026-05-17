@@ -1,8 +1,7 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const dayjs = require('dayjs');
 const calcs = require('../utils/calculosLaborales');
 
-const prisma = new PrismaClient();
 
 /**
  * Calcula o recalcula la liquidación mensual de un empleado para un período
@@ -290,9 +289,124 @@ async function guardarLiquidacion(liquidacionData, periodoId, conceptosMap = {})
   });
 }
 
+/**
+ * Calcula liquidación final al momento de la baja del empleado
+ * motivo: DESPIDO_SIN_CAUSA | DESPIDO_CON_CAUSA | RENUNCIA | MUTUO_ACUERDO | JUBILACION | FALLECIMIENTO | VENCIMIENTO_CONTRATO
+ */
+async function calcularLiquidacionFinal(empleadoId, fechaBaja, motivo) {
+  const empleado = await prisma.empleado.findUnique({
+    where: { id: empleadoId },
+    include: { empresa: { include: { convenio: { include: { conceptos: { where: { activo: true } } } } } } },
+  });
+  if (!empleado) throw Object.assign(new Error('Empleado no encontrado'), { statusCode: 404 });
+
+  const fechaBajaDay = dayjs(fechaBaja);
+  const anio = fechaBajaDay.year();
+  const mes = fechaBajaDay.month() + 1;
+  const diaBaja = fechaBajaDay.date();
+  const diasHabiles = calcs.diasHabilesMes(anio, mes);
+  const antiguedadAnios = calcs.calcularAntiguedad(empleado.fechaIngreso, fechaBaja);
+  const basico = Number(empleado.basicoMensual);
+  const detalles = [];
+  let orden = 10;
+
+  // 1. Sueldo proporcional días trabajados en el mes
+  const diasTrabajados = Math.min(diaBaja, diasHabiles);
+  const sueldoProporcional = calcs.proporcionalDias(basico, diasTrabajados, diasHabiles);
+  detalles.push({ codigo: '001', descripcion: `Sueldo proporcional ${diasTrabajados}/${diasHabiles} días`, importe: sueldoProporcional, naturaleza: 'HABER', tipo: 'REMUNERATIVO', remunerativo: true, orden: orden++ });
+
+  // 2. SAC proporcional (desde inicio del semestre hasta la baja)
+  const inicioSemestre = mes <= 6 ? dayjs(`${anio}-01-01`) : dayjs(`${anio}-07-01`);
+  const diasSemestre = mes <= 6 ? 181 : 184;
+  const diasTranscurridos = fechaBajaDay.diff(inicioSemestre, 'day') + 1;
+
+  const liqSemestre = await prisma.liquidacion.findMany({
+    where: {
+      empleadoId,
+      anio,
+      mes: { gte: inicioSemestre.month() + 1, lte: mes },
+      tipo: 'MENSUAL',
+      estado: { in: ['CALCULADO', 'CONFIRMADO'] },
+    },
+    orderBy: { totalHaberes: 'desc' },
+  });
+  const mejorRem = liqSemestre.length > 0 ? Number(liqSemestre[0].totalHaberes) : basico;
+  const sacProporcional = calcs.calcularSAC(mejorRem, diasTranscurridos, diasSemestre);
+  if (sacProporcional > 0) {
+    detalles.push({ codigo: '008', descripcion: `SAC proporcional (${diasTranscurridos} días)`, importe: sacProporcional, naturaleza: 'HABER', tipo: 'REMUNERATIVO', remunerativo: true, orden: orden++ });
+  }
+
+  // 3. Vacaciones proporcionales (días corridos proporcionales al año)
+  const diasVacTotal = calcs.diasVacaciones(antiguedadAnios);
+  const diasVacProporcional = Math.round((diasVacTotal / 12) * mes);
+  // Descontar vacaciones ya gozadas (simplificado: usar el valor proporcional)
+  const importeVacProporcional = calcs.redondear((basico / 25) * diasVacProporcional);
+  if (importeVacProporcional > 0) {
+    detalles.push({ codigo: '009', descripcion: `Vacaciones proporcionales ${diasVacProporcional} días`, importe: importeVacProporcional, naturaleza: 'HABER', tipo: 'REMUNERATIVO', remunerativo: true, orden: orden++, cantidad: diasVacProporcional });
+  }
+
+  // 4. Preaviso e Indemnización según motivo
+  const conPreaviso = ['DESPIDO_SIN_CAUSA', 'DESPIDO_CON_CAUSA', 'MUTUO_ACUERDO'].includes(motivo);
+  const conIndem = motivo === 'DESPIDO_SIN_CAUSA';
+
+  if (conPreaviso) {
+    const diasPre = calcs.diasPreaviso(antiguedadAnios);
+    const importePreaviso = calcs.redondear((basico / 30) * diasPre);
+    detalles.push({ codigo: 'PRE', descripcion: `Preaviso ${diasPre} días (art. 231 LCT)`, importe: importePreaviso, naturaleza: 'HABER', tipo: 'REMUNERATIVO', remunerativo: true, orden: orden++, cantidad: diasPre });
+    // SAC sobre preaviso
+    const sacPreaviso = calcs.redondear(importePreaviso / 12);
+    detalles.push({ codigo: 'SACPRE', descripcion: 'SAC sobre preaviso', importe: sacPreaviso, naturaleza: 'HABER', tipo: 'REMUNERATIVO', remunerativo: true, orden: orden++ });
+  }
+
+  if (conIndem) {
+    const indem = calcs.indemnizacionAntiguedad(mejorRem || basico, antiguedadAnios);
+    detalles.push({ codigo: 'INDEM', descripcion: `Indemnización antigüedad ${Math.max(antiguedadAnios, 1)} años (art. 245 LCT)`, importe: indem, naturaleza: 'HABER', tipo: 'NO_REMUNERATIVO', remunerativo: false, orden: orden++ });
+  }
+
+  // 5. Aportes sobre la parte remunerativa
+  const totalRem = detalles.filter(d => d.remunerativo && d.naturaleza === 'HABER').reduce((s, d) => s + d.importe, 0);
+  const aportes = calcs.calcularAportesEmpleado(totalRem);
+  const contribuciones = calcs.calcularContribucionesEmpleador(totalRem);
+
+  detalles.push({ codigo: '100', descripcion: 'Jubilación (11%)', importe: -aportes.jubilacion, naturaleza: 'DESCUENTO', tipo: 'DEDUCCION', remunerativo: true, orden: 100 });
+  detalles.push({ codigo: '101', descripcion: 'Obra Social (3%)', importe: -aportes.obraSocial, naturaleza: 'DESCUENTO', tipo: 'DEDUCCION', remunerativo: true, orden: 110 });
+  detalles.push({ codigo: '102', descripcion: 'INSSJP/PAMI (3%)', importe: -aportes.inssjp, naturaleza: 'DESCUENTO', tipo: 'DEDUCCION', remunerativo: true, orden: 120 });
+
+  // Contribuciones empleador informativas
+  detalles.push({ codigo: '200', descripcion: 'Contribución Jubilación (16%)', importe: contribuciones.jubilacion, naturaleza: 'INFORMATIVO', tipo: 'APORTE_EMPLEADOR', remunerativo: true, orden: 200 });
+  detalles.push({ codigo: '201', descripcion: 'Contribución Obra Social (6%)', importe: contribuciones.obraSocial, naturaleza: 'INFORMATIVO', tipo: 'APORTE_EMPLEADOR', remunerativo: true, orden: 210 });
+  detalles.push({ codigo: '202', descripcion: 'Contribución INSSJP (1.5%)', importe: contribuciones.inssjp, naturaleza: 'INFORMATIVO', tipo: 'APORTE_EMPLEADOR', remunerativo: true, orden: 220 });
+
+  const totalHaberes = calcs.redondear(detalles.filter(d => d.naturaleza === 'HABER').reduce((s, d) => s + d.importe, 0));
+  const totalDescuentos = calcs.redondear(aportes.total);
+  const totalNeto = calcs.redondear(totalHaberes - totalDescuentos);
+
+  return {
+    empleadoId,
+    anio,
+    mes,
+    tipo: 'LIQUIDACION_FINAL',
+    diasTrabajados,
+    diasNoTrabajados: diasHabiles - diasTrabajados,
+    horasTrabajadas: 0,
+    totalHaberes,
+    totalDescuentos,
+    totalNeto,
+    totalContribuciones: contribuciones.total,
+    estado: 'CALCULADO',
+    detalles,
+    resumen: {
+      basico, antiguedadAnios, fechaBaja, motivo,
+      sacProporcional, importeVacProporcional,
+      totalRem, aportes, contribuciones,
+    },
+  };
+}
+
 module.exports = {
   calcularLiquidacionMensual,
   calcularSAC,
   calcularVacaciones,
+  calcularLiquidacionFinal,
   guardarLiquidacion,
 };
