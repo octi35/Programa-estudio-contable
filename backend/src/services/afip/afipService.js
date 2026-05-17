@@ -115,27 +115,43 @@ async function consultarCUIT(cuitConsulta, cuitEstudio, cert = null, key = null)
     throw Object.assign(new Error(`CUIT inválido: ${cuitConsulta}`), { statusCode: 400 });
   }
 
-  logger.info('Consultando CUIT en Padrón AFIP', { cuitBuscado, cuitEstudio: cuitEst });
+  logger.info('Consultando CUIT en Padrón AFIP A13', { cuitBuscado, cuitEstudio: cuitEst });
 
   try {
     const afip = getAfipInstance(cuitEst, cert, key);
-    const datos = await afip.RegisterScopeFive.GetTaxpayerDetails(parseInt(cuitBuscado, 10));
+
+    // Padrón A13 (alcance 13) — más completo que A5/A4: incluye actividades,
+    // régimen, monotributo, IVA y datos consolidados. Caemos a A5 si no hay
+    // permisos para A13 en homologación.
+    let datos;
+    try {
+      datos = await afip.RegisterScopeThirteen.getTaxpayerDetails(parseInt(cuitBuscado, 10));
+      logger.info('Datos obtenidos de Padrón A13', { cuitBuscado });
+    } catch (errA13) {
+      logger.warn('A13 no disponible, fallback a A5', { error: errA13.message });
+      datos = await afip.RegisterScopeFive.GetTaxpayerDetails(parseInt(cuitBuscado, 10));
+    }
 
     if (!datos || !datos.datosGenerales) {
       throw Object.assign(new Error(`CUIT ${cuitBuscado} no encontrado en el padrón AFIP`), { statusCode: 404 });
     }
 
     const gen = datos.datosGenerales;
-    const domFiscal = gen.domicilioFiscal || {};
+
+    // A13 puede devolver el domicilio como array de objetos (por orden de relevancia
+    // — fiscal, legal, etc.) o como un único `domicilioFiscal`. Soportamos ambos.
+    const domFiscal = gen.domicilioFiscal
+      || (Array.isArray(gen.domicilio) ? gen.domicilio[0] : gen.domicilio)
+      || {};
 
     const razonSocial = gen.razonSocial
       || `${gen.apellido || ''} ${gen.nombre || ''}`.trim()
       || 'Sin denominación';
 
     const domicilio = [
-      domFiscal.descripcionProvincia,
-      domFiscal.localidad,
       `${domFiscal.direccion || ''} ${domFiscal.numero || ''}`.trim(),
+      domFiscal.localidad,
+      domFiscal.descripcionProvincia || domFiscal.idProvincia,
       domFiscal.codigoPostal,
     ].filter(Boolean).join(', ');
 
@@ -145,8 +161,14 @@ async function consultarCUIT(cuitConsulta, cuitEstudio, cert = null, key = null)
     const resultado = {
       cuit: cuitBuscado,
       razonSocial: razonSocial.trim(),
+      nombreFantasia: gen.nombreFantasia || null,
       domicilio,
+      localidad: domFiscal.localidad || null,
+      provincia: domFiscal.descripcionProvincia || null,
+      codigoPostal: domFiscal.codigoPostal || null,
       condicionIVA,
+      tipoPersona: gen.tipoPersona || (gen.apellido ? 'FISICA' : 'JURIDICA'),
+      tipoClave: gen.tipoClave || 'CUIT',
       estado: gen.estadoClave || 'ACTIVO',
       raw: datos,
     };

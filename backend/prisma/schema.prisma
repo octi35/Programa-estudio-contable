@@ -143,6 +143,7 @@ model Empresa {
   presupuestos        Presupuesto[]
   comprobantesElect   ComprobanteElectronico[]
   coeficientesCM      CoeficienteCM[]
+  notificacionesAfip  NotificacionAfip[]
 
   @@map("empresas")
 }
@@ -1037,6 +1038,35 @@ enum EstadoFacturaHonorarios {
 }
 
 // ─── MONOTRIBUTO ──────────────────────────────────────────────────────────────
+
+// Notificaciones del Buzón E-Ventanilla AFIP por empresa.
+// Se sincronizan periódicamente vía cron desde el WS de AFIP.
+model NotificacionAfip {
+  id            String   @id @default(uuid())
+  empresaId     String
+  // ID original del mensaje en AFIP — clave de idempotencia
+  mensajeIdAfip String?
+  asunto        String
+  cuerpo        String?  @db.Text
+  origen        String?  // Servicio AFIP que emitió (DGI, ARBA, etc.)
+  prioridad     String   @default("NORMAL") // CRITICA, ALTA, NORMAL, BAJA
+  categoria     String?  // INTIMACION, REQUERIMIENTO, INFORMATIVA, etc.
+  fechaAfip     DateTime
+  leida         Boolean  @default(false)
+  archivada     Boolean  @default(false)
+  urlOriginal   String?
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, mensajeIdAfip])
+  @@index([empresaId, leida])
+  @@index([empresaId, fechaAfip])
+  @@index([prioridad])
+  @@map("notificaciones_afip")
+}
 
 // Tabla configurable de categorías de Monotributo (vigencias por estudio).
 // Reemplaza al array hardcodeado CATEGORIAS_2024.

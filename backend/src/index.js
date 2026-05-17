@@ -196,4 +196,25 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(tickAutomatizaciones, 60 * 60 * 1000);
 }
 
+// ── Cron sincronización E-Ventanilla AFIP ─────────────────────────────────
+// Corre a las 7am. Trae mensajes nuevos del buzón de cada empresa.
+const { ejecutarSyncEVentanilla, yaCorrioHoy: yaCorrioEVentanilla } = require('./services/cronEVentanilla');
+const HORA_EVENTANILLA = parseInt(process.env.HORA_SYNC_EVENTANILLA || '7', 10);
+
+async function tickEVentanilla() {
+  try {
+    const ahora = new Date();
+    if (ahora.getHours() !== HORA_EVENTANILLA) return;
+    if (await yaCorrioEVentanilla()) return;
+    await ejecutarSyncEVentanilla();
+  } catch (err) {
+    logger.error?.(`[CronEVentanilla] error: ${err.message}`) || console.error('[CronEVentanilla]', err.message);
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(tickEVentanilla, 45 * 1000);
+  setInterval(tickEVentanilla, 60 * 60 * 1000);
+}
+
 module.exports = app;

@@ -1,16 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PlusIcon, MagnifyingGlassIcon, BuildingOfficeIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, MagnifyingGlassIcon, BuildingOfficeIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import Modal from '../components/Modal';
 import { formatDate } from '../utils/format';
+import { useAfipPadron } from '../hooks/useAfipPadron';
 
 function EmpresaForm({ empresa, convenios, onSuccess, onClose }) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+  const { register, handleSubmit, setValue, getValues, formState: { errors, isSubmitting } } = useForm({
     defaultValues: empresa || {},
   });
+  const { consultar: consultarPadron, loading: loadingPadron } = useAfipPadron();
+
+  // onBlur del CUIT → consulta padrón AFIP y autocompleta.
+  // Sólo pre-llena los campos que estén vacíos (no pisa lo que el usuario tipeó).
+  const autocompletarDesdeAfip = async (e) => {
+    const cuit = e.target.value;
+    if (!/^\d{2}-?\d{8}-?\d{1}$/.test(cuit)) return;
+    const datos = await consultarPadron(cuit);
+    if (!datos) return;
+    const map = {
+      razonSocial: datos.razonSocial,
+      domicilio: datos.domicilio,
+      localidad: datos.localidad,
+      provincia: datos.provincia,
+      codigoPostal: datos.codigoPostal,
+      nombreFantasia: datos.nombreFantasia,
+    };
+    for (const [k, v] of Object.entries(map)) {
+      if (v && !getValues(k)) setValue(k, v, { shouldDirty: true });
+    }
+  };
 
   const onSubmit = async (data) => {
     try {
@@ -40,12 +62,21 @@ function EmpresaForm({ empresa, convenios, onSuccess, onClose }) {
           <input className="input" {...register('nombreFantasia')} />
         </div>
         <div>
-          <label className="label">CUIT *</label>
-          <input className="input" placeholder="30-12345678-9" {...register('cuit', {
-            required: 'Requerido',
-            pattern: { value: /^\d{2}-\d{8}-\d{1}$/, message: 'Formato: XX-XXXXXXXX-X' }
-          })} />
+          <label className="label flex items-center gap-1">
+            CUIT *
+            {loadingPadron && <span className="text-xs text-blue-600 inline-flex items-center gap-1"><SparklesIcon className="w-3 h-3 animate-pulse" /> Consultando AFIP...</span>}
+          </label>
+          <input
+            className="input"
+            placeholder="30-12345678-9"
+            {...register('cuit', {
+              required: 'Requerido',
+              pattern: { value: /^\d{2}-?\d{8}-?\d{1}$/, message: 'Formato: XX-XXXXXXXX-X' },
+              onBlur: autocompletarDesdeAfip,
+            })}
+          />
           {errors.cuit && <p className="text-red-500 text-xs mt-1">{errors.cuit.message}</p>}
+          <p className="text-xs text-gray-400 mt-1">Tip: al salir del campo, se autocompleta desde el padrón AFIP</p>
         </div>
         <div className="col-span-2">
           <label className="label">Domicilio</label>

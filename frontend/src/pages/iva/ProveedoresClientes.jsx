@@ -1,19 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
 import toast from 'react-hot-toast';
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, SparklesIcon } from '@heroicons/react/24/outline';
 import Modal from '../../components/Modal';
 import ImportExcelButton from '../../components/ImportExcelButton';
 import { useForm } from 'react-hook-form';
+import { useAfipPadron } from '../../hooks/useAfipPadron';
 
 const CONDICION_IVA = ['RESPONSABLE_INSCRIPTO','MONOTRIBUTISTA','EXENTO','CONSUMIDOR_FINAL','NO_RESPONSABLE'];
 const TIPO_PERSONA = ['PROVEEDOR','CLIENTE','AMBOS'];
 
 function ProveedorForm({ item, empresas, defaultEmpresaId, onSave, onCancel }) {
   const [guardando, setGuardando] = useState(false);
-  const { register, handleSubmit } = useForm({
+  const { register, handleSubmit, setValue, getValues } = useForm({
     defaultValues: item || { empresaId: defaultEmpresaId, tipo: 'PROVEEDOR', condicionIVA: 'RESPONSABLE_INSCRIPTO', activo: true },
   });
+  const { consultar: consultarPadron, loading: loadingPadron } = useAfipPadron();
+
+  const autocompletarDesdeAfip = async (e) => {
+    const cuit = e.target.value;
+    if (!/^\d{2}-?\d{8}-?\d{1}$/.test(cuit)) return;
+    const datos = await consultarPadron(cuit);
+    if (!datos) return;
+    const map = {
+      razonSocial: datos.razonSocial,
+      condicionIVA: datos.condicionIVA,
+      localidad: datos.localidad,
+      provincia: datos.provincia,
+      domicilio: datos.domicilio,
+    };
+    for (const [k, v] of Object.entries(map)) {
+      if (v && !getValues(k)) setValue(k, v, { shouldDirty: true });
+    }
+  };
 
   const onSubmit = async (data) => {
     setGuardando(true);
@@ -54,8 +73,16 @@ function ProveedorForm({ item, empresas, defaultEmpresaId, onSave, onCancel }) {
           <input {...register('razonSocial', { required: true })} className={inp} />
         </div>
         <div>
-          <label className={lbl}>CUIT</label>
-          <input {...register('cuit')} className={inp} placeholder="XX-XXXXXXXX-X" />
+          <label className={lbl + ' flex items-center gap-1'}>
+            CUIT
+            {loadingPadron && <span className="text-blue-600 inline-flex items-center gap-1"><SparklesIcon className="w-3 h-3 animate-pulse" /> Consultando AFIP...</span>}
+          </label>
+          <input
+            {...register('cuit', { onBlur: autocompletarDesdeAfip })}
+            className={inp}
+            placeholder="XX-XXXXXXXX-X"
+          />
+          <p className="text-[10px] text-gray-400 mt-0.5">Se autocompleta desde el padrón AFIP al perder el foco</p>
         </div>
         <div>
           <label className={lbl}>Email</label>

@@ -248,6 +248,99 @@ function PanelARCA() {
 }
 
 // ── Panel Pendientes de hoy ───────────────────────────────────────────────
+// ── Widget E-Ventanilla AFIP (notificaciones del buzón) ──────────────────
+function WidgetEVentanilla() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  const cargar = async () => {
+    try {
+      const r = await api.get('/afip/notificaciones', { params: { soloNoLeidas: true, limit: 5 } });
+      setData(r.data);
+    } catch (_) { setData(null); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { cargar(); }, []);
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      await api.post('/afip/notificaciones/sincronizar', {});
+      await cargar();
+    } catch (_) {} finally { setSyncing(false); }
+  };
+
+  const marcarLeida = async (id) => {
+    try {
+      await api.put(`/afip/notificaciones/${id}/leer`, { leida: true });
+      await cargar();
+    } catch (_) {}
+  };
+
+  if (loading) return null;
+  if (!data) return null;
+
+  const colorPrioridad = {
+    CRITICA: 'bg-red-100 text-red-800 border-red-300',
+    ALTA: 'bg-orange-100 text-orange-800 border-orange-300',
+    NORMAL: 'bg-blue-100 text-blue-800 border-blue-300',
+    BAJA: 'bg-gray-100 text-gray-700 border-gray-300',
+  };
+
+  return (
+    <div className={`${PANEL_CLASS} overflow-hidden`}>
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center text-xl">📬</div>
+          <div>
+            <h2 className="font-semibold text-gray-900 tracking-tight">Buzón AFIP — E-Ventanilla</h2>
+            <p className="text-xs text-gray-500">
+              {data.noLeidas > 0 ? `${data.noLeidas} mensajes no leídos` : 'Sin mensajes nuevos'}
+            </p>
+          </div>
+        </div>
+        <button onClick={sync} disabled={syncing} className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50">
+          {syncing ? 'Sincronizando...' : '↻ Sincronizar'}
+        </button>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {data.data.length === 0 ? (
+          <div className="px-6 py-8 text-center text-sm text-gray-400">
+            No hay notificaciones pendientes. {!data.noLeidas && 'Hacé clic en "Sincronizar" para chequear el buzón.'}
+          </div>
+        ) : (
+          data.data.map(n => (
+            <div key={n.id} className="px-6 py-3 hover:bg-gray-50 flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded border ${colorPrioridad[n.prioridad] || colorPrioridad.NORMAL}`}>
+                    {n.prioridad}
+                  </span>
+                  {n.categoria && (
+                    <span className="text-xs text-gray-500">{n.categoria}</span>
+                  )}
+                  <span className="text-xs text-gray-400 ml-auto">
+                    {new Date(n.fechaAfip).toLocaleDateString('es-AR')}
+                  </span>
+                </div>
+                <p className="text-sm font-medium text-gray-900 truncate">{n.asunto}</p>
+                <p className="text-xs text-gray-500 truncate">
+                  {n.empresa?.razonSocial} {n.origen && `· ${n.origen}`}
+                </p>
+              </div>
+              <button onClick={() => marcarLeida(n.id)} className="text-xs text-gray-400 hover:text-gray-700 whitespace-nowrap">
+                Marcar leída
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Panel de Alertas Críticas (Red Flags) ─────────────────────────────────
 function PanelAlertasCriticas({ navigate }) {
   const [data, setData] = useState(null);
@@ -599,6 +692,9 @@ export default function Dashboard() {
         <StatCard icon={CalculatorIcon} label="Liquidaciones del mes" value={resumen.liquidacionesMes} color="purple" />
         <StatCard icon={CurrencyDollarIcon} label="Total haberes mes" value={formatMoney(resumen.totalMensual)} color="orange" />
       </div>
+
+      {/* Buzón E-Ventanilla AFIP */}
+      <WidgetEVentanilla />
 
       {/* Alertas críticas (red flags) */}
       <PanelAlertasCriticas navigate={navigate} />

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import { formatMoney, formatDate, MESES } from '../utils/format';
 import toast from 'react-hot-toast';
-import { PlusIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, CheckIcon, BoltIcon } from '@heroicons/react/24/outline';
 import Modal from '../components/Modal';
 import { confirm } from '../components/confirm';
 
@@ -139,6 +139,38 @@ export default function Honorarios() {
     }
   };
 
+  // Emite CAE en AFIP para todas las facturas PENDIENTES visibles.
+  const handleFacturarMasivoAfip = async () => {
+    const pendientes = (facturas || []).filter(f => f.estado === 'PENDIENTE');
+    if (pendientes.length === 0) {
+      toast('No hay facturas PENDIENTES para emitir', { icon: 'ℹ️' });
+      return;
+    }
+    const totalImp = pendientes.reduce((s, f) => s + parseFloat(f.total || 0), 0);
+    if (!await confirm({
+      title: `Emitir ${pendientes.length} facturas en AFIP`,
+      message: `Se solicitará CAE a AFIP para ${pendientes.length} factura(s) por un total de $${totalImp.toLocaleString('es-AR', { minimumFractionDigits: 2 })}.`,
+      details: [
+        'El sistema arma cada Factura A/B/C según la condición IVA del cliente.',
+        'Si AFIP_AMBIENTE=SIMULADO o no hay certificado configurado, se simulan los CAE.',
+        'Las facturas exitosas quedan marcadas como ENVIADAS con su CAE registrado.',
+        'Los errores se devuelven en el reporte sin afectar las que sí se emitieron.',
+      ],
+      confirmText: 'Emitir CAE',
+    })) return;
+
+    const toastId = toast.loading(`Emitiendo ${pendientes.length} facturas...`);
+    try {
+      const r = await api.post('/afip/facturar-honorarios', { facturaIds: pendientes.map(f => f.id) });
+      const { total, exitosos, errores } = r.data;
+      toast.success(
+        `Emitidas: ${exitosos}/${total}` + (errores > 0 ? ` · Errores: ${errores}` : ''),
+        { id: toastId, duration: 6000 }
+      );
+      fetchFacturas();
+    } catch (_) { toast.dismiss(toastId); }
+  };
+
   const handleMarcarCobrada = async (id) => {
     try {
       await api.put(`/honorarios/facturas/${id}`, { estado: 'COBRADA' });
@@ -185,11 +217,18 @@ export default function Honorarios() {
             </button>
           )}
           {tab === 'facturas' && (
-            <button onClick={handleFacturarMes} disabled={facturando}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-              <CheckIcon className="w-4 h-4" />
-              {facturando ? 'Generando...' : `Facturar ${MESES[filtros.mes - 1]} ${filtros.anio}`}
-            </button>
+            <>
+              <button onClick={handleFacturarMes} disabled={facturando}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50">
+                <CheckIcon className="w-4 h-4" />
+                {facturando ? 'Generando...' : `Facturar ${MESES[filtros.mes - 1]} ${filtros.anio}`}
+              </button>
+              <button onClick={handleFacturarMasivoAfip}
+                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-purple-700">
+                <BoltIcon className="w-4 h-4" />
+                Emitir CAE masivo (AFIP)
+              </button>
+            </>
           )}
         </div>
       </div>
