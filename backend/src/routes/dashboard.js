@@ -184,4 +184,170 @@ router.get('/pendientes', auth, async (req, res, next) => {
   }
 });
 
+// GET /api/dashboard/alertas-criticas
+// Detecta red flags que requieren atención del contador. Diseñado para mostrarse
+// como banner destacado en la parte superior del dashboard.
+router.get('/alertas-criticas', auth, async (req, res, next) => {
+  try {
+    const estudioId = req.usuario.estudioId;
+    const hoy = dayjs();
+    const hace3dias = hoy.subtract(3, 'day').toDate();
+    const hace30dias = hoy.subtract(30, 'day').toDate();
+
+    const empresasFilter = { empresa: { estudioId } };
+
+    const [
+      empleadosSinCUIL,
+      empleadosSinDNI,
+      empleadosSinCBU,
+      liquidacionesBorrador,
+      comprobantesSinProveedor,
+      cuentasInactivas,
+      asientosDescuadrados,
+      monosVencidos,
+    ] = await Promise.all([
+      // Empleados activos sin CUIL o con CUIL inválido (longitud != 13 con guiones)
+      prisma.empleado.findMany({
+        where: { activo: true, ...empresasFilter, OR: [{ cuil: '' }, { cuil: { equals: null } }] },
+        select: { id: true, apellido: true, nombre: true, cuil: true, empresa: { select: { id: true, razonSocial: true } } },
+        take: 50,
+      }),
+      // Empleados sin DNI
+      prisma.empleado.findMany({
+        where: { activo: true, ...empresasFilter, OR: [{ dni: null }, { dni: '' }] },
+        select: { id: true, apellido: true, nombre: true, empresa: { select: { id: true, razonSocial: true } } },
+        take: 50,
+      }),
+      // Empleados activos sin CBU (no se les puede transferir)
+      prisma.empleado.findMany({
+        where: { activo: true, ...empresasFilter, OR: [{ cbu: null }, { cbu: '' }] },
+        select: { id: true, apellido: true, nombre: true, empresa: { select: { id: true, razonSocial: true } } },
+        take: 50,
+      }),
+      // Liquidaciones en BORRADOR con más de 3 días → posiblemente olvidadas
+      prisma.liquidacion.findMany({
+        where: { estado: 'BORRADOR', createdAt: { lt: hace3dias }, periodo: { empresa: { estudioId } } },
+        include: {
+          empleado: { select: { apellido: true, nombre: true } },
+          periodo: { select: { empresa: { select: { id: true, razonSocial: true } } } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 50,
+      }),
+      // Comprobantes IVA sin proveedor asociado (datos incompletos)
+      prisma.comprobanteIVA.findMany({
+        where: { empresa: { estudioId }, proveedorClienteId: null, anulado: false },
+        select: {
+          id: true, fecha: true, tipoComprobante: true, numero: true, total: true,
+          empresa: { select: { id: true, razonSocial: true } },
+        },
+        orderBy: { fecha: 'desc' },
+        take: 50,
+      }),
+      // Cuentas bancarias activas sin movimientos hace 30+ días (posible olvido de conciliación)
+      prisma.cuentaBancaria.findMany({
+        where: {
+          activa: true,
+          empresa: { estudioId },
+          movimientos: { none: { fecha: { gte: hace30dias } } },
+        },
+        select: {
+          id: true, banco: true, numeroCuenta: true, alias: true,
+          empresa: { select: { id: true, razonSocial: true } },
+          movimientos: { select: { fecha: true }, orderBy: { fecha: 'desc' }, take: 1 },
+        },
+        take: 30,
+      }),
+      // Asientos no anulados con debe != haber (no debería existir pero por las dudas)
+      prisma.$queryRawUnsafe(`
+        SELECT a.id, a.fecha, a.descripcion, a."totalDebe", a."totalHaber",
+               e.id as "empresaId", e."razonSocial"
+        FROM "asientos" a
+        JOIN "empresas" e ON e.id = a."empresaId"
+        WHERE a.anulado = false
+          AND e."estudioId" = $1
+          AND ABS(a."totalDebe" - a."totalHaber") > 0.01
+        LIMIT 20
+      `, estudioId),
+      // Monotributistas que ya superaron el tope (>=100%)
+      // — reutilizo lógica: leer monos + agregados de comprobantes
+      (async () => {
+        const monos = await prisma.monotributoCliente.findMany({
+          where: { activo: true, empresa: { estudioId } },
+          include: { empresa: { select: { id: true, razonSocial: true, cuit: true } } },
+        });
+        if (monos.length === 0) return [];
+
+        const anio = hoy.year();
+        const enero = dayjs(`${anio}-01-01`).toDate();
+        const diciembre = dayjs(`${anio}-12-31`).endOf('day').toDate();
+
+        const agregados = await prisma.comprobanteIVA.groupBy({
+          by: ['empresaId'],
+          where: {
+            empresaId: { in: monos.map(m => m.empresaId) },
+            tipoMovimiento: 'VENTA',
+            anulado: false,
+            fecha: { gte: enero, lte: diciembre },
+          },
+          _sum: {
+            netoGravado21: true, netoGravado105: true, netoGravado27: true,
+            netoNoGravado: true, exento: true, iva21: true, iva105: true, iva27: true,
+          },
+        });
+        const facturadoPorEmpresa = {};
+        for (const a of agregados) {
+          facturadoPorEmpresa[a.empresaId] = ['netoGravado21','netoGravado105','netoGravado27','netoNoGravado','exento','iva21','iva105','iva27']
+            .reduce((s, k) => s + Number(a._sum[k] || 0), 0);
+        }
+        const out = [];
+        for (const m of monos) {
+          const tope = TOPES_MONOTRIBUTO[m.categoriaActual];
+          if (!tope) continue;
+          const facturado = facturadoPorEmpresa[m.empresaId] || 0;
+          if (facturado > tope) {
+            out.push({
+              empresaId: m.empresaId,
+              empresa: m.empresa.razonSocial,
+              cuit: m.empresa.cuit,
+              categoriaActual: m.categoriaActual,
+              tope,
+              facturado,
+              exceso: facturado - tope,
+            });
+          }
+        }
+        return out;
+      })(),
+    ]);
+
+    // Convertir Decimals en plain numbers para asientos descuadrados
+    const asientosDesc = (asientosDescuadrados || []).map(a => ({
+      ...a,
+      totalDebe: Number(a.totalDebe),
+      totalHaber: Number(a.totalHaber),
+      diferencia: Number(a.totalDebe) - Number(a.totalHaber),
+    }));
+
+    const total =
+      empleadosSinCUIL.length + empleadosSinDNI.length + empleadosSinCBU.length +
+      liquidacionesBorrador.length + comprobantesSinProveedor.length +
+      cuentasInactivas.length + asientosDesc.length + monosVencidos.length;
+
+    res.json({
+      total,
+      alertas: {
+        empleadosSinCUIL: { count: empleadosSinCUIL.length, items: empleadosSinCUIL },
+        empleadosSinDNI: { count: empleadosSinDNI.length, items: empleadosSinDNI },
+        empleadosSinCBU: { count: empleadosSinCBU.length, items: empleadosSinCBU },
+        liquidacionesBorrador: { count: liquidacionesBorrador.length, items: liquidacionesBorrador },
+        comprobantesSinProveedor: { count: comprobantesSinProveedor.length, items: comprobantesSinProveedor },
+        cuentasInactivas: { count: cuentasInactivas.length, items: cuentasInactivas },
+        asientosDescuadrados: { count: asientosDesc.length, items: asientosDesc },
+        monotributistasExcedidos: { count: monosVencidos.length, items: monosVencidos },
+      },
+    });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

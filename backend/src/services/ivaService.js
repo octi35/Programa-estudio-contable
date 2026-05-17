@@ -21,6 +21,15 @@ const CODIGOS_COMPROBANTE_AFIP = {
   LIQUIDACION_B: '064',
 };
 
+const CODIGOS_ALICUOTA_AFIP = {
+  0: '0003',
+  10.5: '0004',
+  21: '0005',
+  27: '0006',
+  5: '0008',
+  2.5: '0009',
+};
+
 // Determina si el comprobante genera débito fiscal (ventas) o crédito fiscal (compras)
 function esDebito(tipoMovimiento, tipoComprobante) {
   const esNota = tipoComprobante.includes('NOTA_CREDITO');
@@ -119,6 +128,45 @@ function generarArchivoAFIP(comprobantes, cuitEmpresa, anio, mes, tipoMovimiento
 }
 
 /**
+ * Genera archivo de alícuotas (RG 3685) para AFIP
+ */
+function generarArchivoAlicuotasAFIP(comprobantes, tipoMovimiento) {
+  const lineas = [];
+
+  for (const c of comprobantes) {
+    if (c.anulado) continue;
+    if (c.tipoMovimiento !== tipoMovimiento) continue;
+
+    const codigoComp = CODIGOS_COMPROBANTE_AFIP[c.tipoComprobante] || '099';
+    const pv = String(c.puntoVenta).padStart(5, '0');
+    const nro = String(c.numero).padStart(20, '0');
+
+    const alicuotas = [
+      { base: c.netoGravado21, iva: c.iva21, alicuota: 21 },
+      { base: c.netoGravado105, iva: c.iva105, alicuota: 10.5 },
+      { base: c.netoGravado27, iva: c.iva27, alicuota: 27 },
+    ].filter(a => Math.abs(parseFloat(a.base || 0)) > 0 || Math.abs(parseFloat(a.iva || 0)) > 0);
+
+    for (const a of alicuotas) {
+      const codigoAlic = CODIGOS_ALICUOTA_AFIP[a.alicuota] || '0005';
+      const neto = String(Math.round(Math.abs(parseFloat(a.base || 0)) * 100)).padStart(15, '0');
+      const iva = String(Math.round(Math.abs(parseFloat(a.iva || 0)) * 100)).padStart(15, '0');
+      const linea = [
+        codigoComp,   // 3
+        pv,           // 5
+        nro,          // 20
+        neto,         // 15
+        codigoAlic,   // 4
+        iva,          // 15
+      ].join('');
+      lineas.push(linea);
+    }
+  }
+
+  return lineas.join('\r\n');
+}
+
+/**
  * Agrupa comprobantes por alícuota para el libro IVA
  */
 function agruparPorAlicuota(comprobantes) {
@@ -151,4 +199,11 @@ function agruparPorAlicuota(comprobantes) {
   return Object.fromEntries(Object.entries(totales).map(([k, v]) => [k, Math.round(v * 100) / 100]));
 }
 
-module.exports = { calcularPosicionIVA, generarArchivoAFIP, agruparPorAlicuota, CODIGOS_COMPROBANTE_AFIP };
+module.exports = {
+  calcularPosicionIVA,
+  generarArchivoAFIP,
+  generarArchivoAlicuotasAFIP,
+  agruparPorAlicuota,
+  CODIGOS_COMPROBANTE_AFIP,
+  CODIGOS_ALICUOTA_AFIP,
+};

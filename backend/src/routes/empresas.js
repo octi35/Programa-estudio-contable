@@ -1,9 +1,41 @@
 const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const { body, param, query } = require('express-validator');
 const { auth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
+
+const uploadDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const imageFilter = (_req, file, cb) => {
+  if (file.mimetype && file.mimetype.startsWith('image/')) cb(null, true);
+  else cb(new Error('Solo se permiten imágenes'));
+};
+
+const logoStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `empresa_${req.params.id}_logo${ext}`);
+  },
+});
+
+const firmaStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `empresa_${req.params.id}_firma${ext}`);
+  },
+});
+
+const uploadLogo = multer({ storage: logoStorage, limits: { fileSize: 2 * 1024 * 1024 }, fileFilter: imageFilter });
+const uploadFirma = multer({ storage: firmaStorage, limits: { fileSize: 2 * 1024 * 1024 }, fileFilter: imageFilter });
+
+const toBool = (v) => v === true || v === 'true' || v === 1 || v === '1';
 
 
 const empresaValidations = [
@@ -92,6 +124,93 @@ router.put('/:id', auth, [param('id').isUUID(), ...empresaValidations, validate]
       where: { id: req.params.id },
       data: req.body,
       include: { convenio: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/empresas/:id/recibo-config
+router.patch('/:id/recibo-config', auth, [
+  param('id').isUUID(),
+  body('reciboColor').optional().isString(),
+  body('reciboLayout').optional().isIn(['CLASICO', 'MINIMAL']),
+  body('reciboMostrarQR').optional(),
+  body('reciboMostrarDuplicado').optional(),
+  validate,
+], async (req, res, next) => {
+  try {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.id, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const data = {};
+    if (req.body.reciboColor !== undefined) {
+      const color = String(req.body.reciboColor || '').trim();
+      data.reciboColor = color.length > 0 ? color : null;
+    }
+    if (req.body.reciboLayout !== undefined) data.reciboLayout = req.body.reciboLayout;
+    if (req.body.reciboMostrarQR !== undefined) data.reciboMostrarQR = toBool(req.body.reciboMostrarQR);
+    if (req.body.reciboMostrarDuplicado !== undefined) data.reciboMostrarDuplicado = toBool(req.body.reciboMostrarDuplicado);
+
+    const updated = await prisma.empresa.update({ where: { id: req.params.id }, data });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/empresas/:id/logo
+router.post('/:id/logo', auth, [param('id').isUUID(), validate], uploadLogo.single('logo'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.id, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const updated = await prisma.empresa.update({
+      where: { id: req.params.id },
+      data: { logo: req.file.filename },
+    });
+    res.json({ logo: updated.logo, url: `/uploads/${updated.logo}` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/empresas/:id/recibo-firma
+router.post('/:id/recibo-firma', auth, [param('id').isUUID(), validate], uploadFirma.single('firma'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.id, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const updated = await prisma.empresa.update({
+      where: { id: req.params.id },
+      data: { reciboFirma: req.file.filename },
+    });
+    res.json({ reciboFirma: updated.reciboFirma, url: `/uploads/${updated.reciboFirma}` });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/empresas/:id/recibo-firma
+router.delete('/:id/recibo-firma', auth, [param('id').isUUID(), validate], async (req, res, next) => {
+  try {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.id, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const updated = await prisma.empresa.update({
+      where: { id: req.params.id },
+      data: { reciboFirma: null },
     });
     res.json(updated);
   } catch (err) {

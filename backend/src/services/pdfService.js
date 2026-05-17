@@ -10,6 +10,27 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 
 const fmtARS = (n) => `$ ${Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const DEFAULT_RECIBO_COLOR = '#1e3a5f';
+
+function resolveUpload(filename) {
+  if (!filename) return null;
+  const fp = path.isAbsolute(filename) ? filename : path.join(process.cwd(), 'uploads', filename);
+  if (fs.existsSync(fp)) return fp;
+  return null;
+}
+
+function getReciboConfig(empresa, estudio) {
+  const color = empresa.reciboColor || DEFAULT_RECIBO_COLOR;
+  const layout = (empresa.reciboLayout || 'CLASICO').toUpperCase();
+  const mostrarQR = empresa.reciboMostrarQR !== false;
+  const mostrarDuplicado = empresa.reciboMostrarDuplicado !== false;
+
+  const logoPath = resolveUpload(empresa.logo) || resolveUpload(estudio?.logo);
+  const firmaPath = resolveUpload(empresa.reciboFirma);
+
+  return { color, layout, mostrarQR, mostrarDuplicado, logoPath, firmaPath };
+}
+
 async function generarRecibo(liquidacion) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -27,14 +48,19 @@ async function generarRecibo(liquidacion) {
       const mesNombre = MESES[mes - 1];
       const titulo = getTituloRecibo(liquidacion.tipo);
 
+      const config = getReciboConfig(empresa, estudio);
       const qrData = `CUIT:${empresa.cuit}|CUIL:${emp.cuil}|Per:${anio}${String(mes).padStart(2,'0')}|Neto:${liquidacion.totalNeto}|Tipo:${liquidacion.tipo}`;
       let qrBuf = null;
-      try { qrBuf = await QRCode.toBuffer(qrData, { width: 90, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } }); } catch (_) {}
+      if (config.mostrarQR) {
+        try { qrBuf = await QRCode.toBuffer(qrData, { width: 90, margin: 1, color: { dark: config.color, light: '#ffffff' } }); } catch (_) {}
+      }
 
-      renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset: 30, qrBuf });
-      doc.moveTo(30, 418).lineTo(565, 418).dash(3, { space: 3 }).stroke('#aaa').undash();
-      doc.fontSize(7).fillColor('#999').text('✂  DUPLICADO — EMPLEADO CONSERVA ESTE TALÓN', 30, 421, { width: 535, align: 'center' });
-      renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset: 438, qrBuf });
+      renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset: 30, qrBuf, config });
+      if (config.mostrarDuplicado) {
+        doc.moveTo(30, 418).lineTo(565, 418).dash(3, { space: 3 }).stroke('#aaa').undash();
+        doc.fontSize(7).fillColor('#999').text('✂  DUPLICADO — EMPLEADO CONSERVA ESTE TALÓN', 30, 421, { width: 535, align: 'center' });
+        renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset: 438, qrBuf, config });
+      }
 
       doc.end();
     } catch (err) { reject(err); }
@@ -61,14 +87,19 @@ async function generarRecibosBulk(liquidaciones) {
         const mesNombre = MESES[mes - 1];
         const titulo = getTituloRecibo(liq.tipo);
 
+        const config = getReciboConfig(empresa, estudio);
         const qrData = `CUIT:${empresa.cuit}|CUIL:${emp.cuil}|Per:${anio}${String(mes).padStart(2,'0')}|Neto:${liq.totalNeto}`;
         let qrBuf = null;
-        try { qrBuf = await QRCode.toBuffer(qrData, { width: 90, margin: 1, color: { dark: '#1e3a5f', light: '#ffffff' } }); } catch (_) {}
+        if (config.mostrarQR) {
+          try { qrBuf = await QRCode.toBuffer(qrData, { width: 90, margin: 1, color: { dark: config.color, light: '#ffffff' } }); } catch (_) {}
+        }
 
-        renderRecibo(doc, { liquidacion: liq, emp, empresa, estudio, mesNombre, titulo, yOffset: 30, qrBuf });
-        doc.moveTo(30, 418).lineTo(565, 418).dash(3, { space: 3 }).stroke('#aaa').undash();
-        doc.fontSize(7).fillColor('#999').text('✂  DUPLICADO — EMPLEADO CONSERVA ESTE TALÓN', 30, 421, { width: 535, align: 'center' });
-        renderRecibo(doc, { liquidacion: liq, emp, empresa, estudio, mesNombre, titulo, yOffset: 438, qrBuf });
+        renderRecibo(doc, { liquidacion: liq, emp, empresa, estudio, mesNombre, titulo, yOffset: 30, qrBuf, config });
+        if (config.mostrarDuplicado) {
+          doc.moveTo(30, 418).lineTo(565, 418).dash(3, { space: 3 }).stroke('#aaa').undash();
+          doc.fontSize(7).fillColor('#999').text('✂  DUPLICADO — EMPLEADO CONSERVA ESTE TALÓN', 30, 421, { width: 535, align: 'center' });
+          renderRecibo(doc, { liquidacion: liq, emp, empresa, estudio, mesNombre, titulo, yOffset: 438, qrBuf, config });
+        }
       }
       doc.end();
     } catch (err) { reject(err); }
@@ -80,23 +111,31 @@ function getTituloRecibo(tipo) {
   return t[tipo] || 'RECIBO DE HABERES';
 }
 
-function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset, qrBuf }) {
+function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titulo, yOffset, qrBuf, config }) {
   const x = 30, w = 535;
   const anio = liquidacion.anio || liquidacion.periodo?.anio;
   const mes = liquidacion.mes || liquidacion.periodo?.mes;
+  const theme = config || getReciboConfig(empresa, estudio);
+  const isMinimal = theme.layout === 'MINIMAL';
+  const headerBg = isMinimal ? '#ffffff' : theme.color;
+  const headerBorder = isMinimal ? '#e5e7eb' : theme.color;
+  const headerText = isMinimal ? theme.color : 'white';
+  const tableHeadBg = isMinimal ? '#f3f4f6' : '#2d5f9f';
+  const tableHeadText = isMinimal ? '#1f2937' : 'white';
+  const totalsBg = isMinimal ? '#eef2f7' : '#e6eef6';
 
   // Header
-  doc.rect(x, yOffset, w, 58).fillAndStroke('#1e3a5f', '#1e3a5f');
-
-  let textX = x + 10;
-  if (empresa.logo) {
-    try {
-      const lp = path.isAbsolute(empresa.logo) ? empresa.logo : path.join(process.cwd(), 'uploads', empresa.logo);
-      if (fs.existsSync(lp)) { doc.image(lp, x + 8, yOffset + 8, { height: 38, fit: [55, 38] }); textX = x + 70; }
-    } catch (_) {}
+  doc.rect(x, yOffset, w, 58).fillAndStroke(headerBg, headerBorder);
+  if (isMinimal) {
+    doc.rect(x, yOffset, w, 3).fill(theme.color);
   }
 
-  doc.fillColor('white').fontSize(12).font('Helvetica-Bold')
+  let textX = x + 10;
+  if (theme.logoPath) {
+    try { doc.image(theme.logoPath, x + 8, yOffset + 8, { height: 38, fit: [55, 38] }); textX = x + 70; } catch (_) {}
+  }
+
+  doc.fillColor(headerText).fontSize(12).font('Helvetica-Bold')
     .text(empresa.razonSocial, textX, yOffset + 6, { width: 290 });
   doc.fontSize(7.5).font('Helvetica')
     .text(`CUIT: ${empresa.cuit}`, textX, yOffset + 23)
@@ -105,7 +144,7 @@ function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titu
 
   // Right side — title + QR
   const rightX = x + w - 105;
-  doc.fillColor('white').fontSize(11).font('Helvetica-Bold')
+  doc.fillColor(headerText).fontSize(11).font('Helvetica-Bold')
     .text(titulo, rightX, yOffset + 6, { width: 100, align: 'right' });
   doc.fontSize(8.5).font('Helvetica')
     .text(`${mesNombre} ${anio}`, rightX, yOffset + 22, { width: 100, align: 'right' });
@@ -116,7 +155,7 @@ function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titu
   // Employee bar
   let y = yOffset + 63;
   doc.rect(x, y, w, 44).fillAndStroke('#f0f4f8', '#cccccc');
-  doc.fillColor('#1e3a5f').fontSize(7.5).font('Helvetica-Bold')
+  doc.fillColor(theme.color).fontSize(7.5).font('Helvetica-Bold')
     .text(`${emp.apellido?.toUpperCase()}, ${emp.nombre}`, x + 8, y + 5, { width: 310 });
   doc.fillColor('#444').fontSize(7.2).font('Helvetica')
     .text(`CUIL: ${emp.cuil}`, x + 8, y + 18)
@@ -131,8 +170,8 @@ function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titu
   y += 49;
   const cols = { desc: x + 8, cant: x + 302, vunit: x + 372, imp: x + 452 };
 
-  doc.rect(x, y, w, 13).fillAndStroke('#2d5f9f', '#2d5f9f');
-  doc.fillColor('white').fontSize(7).font('Helvetica-Bold')
+  doc.rect(x, y, w, 13).fillAndStroke(tableHeadBg, tableHeadBg);
+  doc.fillColor(tableHeadText).fontSize(7).font('Helvetica-Bold')
     .text('CONCEPTO', cols.desc, y + 3)
     .text('CANT.', cols.cant, y + 3, { width: 64, align: 'right' })
     .text('V. UNITARIO', cols.vunit, y + 3, { width: 74, align: 'right' })
@@ -173,12 +212,12 @@ function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titu
 
   // Totals
   y += 4;
-  doc.rect(x, y, w, 26).fillAndStroke('#e6eef6', '#b0c4d8');
+  doc.rect(x, y, w, 26).fillAndStroke(totalsBg, '#b0c4d8');
   doc.fillColor('#333').fontSize(7.5).font('Helvetica-Bold')
     .text('TOTAL HABERES:', x + 6, y + 5).text(fmtARS(liquidacion.totalHaberes), x + 90, y + 5)
     .text('DESCUENTOS:', x + 185, y + 5).text(fmtARS(liquidacion.totalDescuentos), x + 255, y + 5)
     .text('NETO:', x + 360, y + 5);
-  doc.rect(x + 390, y, w - 360, 26).fillAndStroke('#1e3a5f', '#1e3a5f');
+  doc.rect(x + 390, y, w - 360, 26).fillAndStroke(theme.color, theme.color);
   doc.fillColor('white').fontSize(12).font('Helvetica-Bold')
     .text(fmtARS(liquidacion.totalNeto), x + 392, y + 6, { width: 139, align: 'right' });
 
@@ -189,6 +228,9 @@ function renderRecibo(doc, { liquidacion, emp, empresa, estudio, mesNombre, titu
 
   // Signatures
   y += 12;
+  if (theme.firmaPath) {
+    try { doc.image(theme.firmaPath, x + 320, y - 4, { width: 160, height: 32, fit: [160, 32] }); } catch (_) {}
+  }
   doc.moveTo(x + 50, y + 22).lineTo(x + 200, y + 22).stroke('#555');
   doc.moveTo(x + 330, y + 22).lineTo(x + 480, y + 22).stroke('#555');
   doc.fontSize(6.5).fillColor('#777')

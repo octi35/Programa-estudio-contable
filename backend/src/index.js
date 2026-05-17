@@ -120,4 +120,56 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(() => ejecutarCronCambios('diario'), DIA_MS);
 }
 
+// ── Cron alertas de vencimientos ───────────────────────────────────────────
+// Tickea cada hora; sólo dispara entre 8:00 y 8:59 horario del server.
+// El propio cron es idempotente (1 vez por día por estudio via LogAccion).
+const { ejecutarCronAlertas } = require('./services/cronAlertas');
+const HORA_ALERTAS = parseInt(process.env.HORA_ALERTAS_VENCIMIENTOS || '8', 10);
+
+async function tickAlertas() {
+  try {
+    const ahora = new Date();
+    if (ahora.getHours() !== HORA_ALERTAS) return;
+    const resumen = await ejecutarCronAlertas();
+    const enviados = resumen.reduce((s, r) => s + (r.enviados || 0), 0);
+    const vencs = resumen.reduce((s, r) => s + (r.vencimientos || 0), 0);
+    logger.info(`[CronAlertas] estudios=${resumen.length} vencimientos=${vencs} emails=${enviados}`);
+  } catch (err) {
+    logger.error?.(`[CronAlertas] error: ${err.message}`) || console.error('[CronAlertas]', err.message);
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  // Chequea inmediatamente por si arrancamos en la franja horaria
+  setTimeout(tickAlertas, 60 * 1000);
+  // Y después cada hora
+  setInterval(tickAlertas, 60 * 60 * 1000);
+}
+
+// ── Cron cierre automático de períodos ─────────────────────────────────────
+// Corre 1 vez al día a las 3am. Cierra períodos con 100% de liquidaciones
+// CONFIRMADAS y >= N días desde su creación. Genera F.931 automáticamente.
+const { ejecutarCierreAutomatico } = require('./services/cronCierreAutomatico');
+const HORA_CIERRE_AUTO = parseInt(process.env.HORA_CIERRE_AUTOMATICO || '3', 10);
+let cierreAutoYaCorrioHoy = false;
+
+async function tickCierreAuto() {
+  try {
+    const ahora = new Date();
+    if (ahora.getHours() !== HORA_CIERRE_AUTO) { cierreAutoYaCorrioHoy = false; return; }
+    if (cierreAutoYaCorrioHoy) return;
+    cierreAutoYaCorrioHoy = true;
+    const resumen = await ejecutarCierreAutomatico();
+    const cerrados = resumen.reduce((s, r) => s + (r.cerrados || 0), 0);
+    logger.info(`[CronCierreAuto] estudios=${resumen.length} cerrados=${cerrados}`);
+  } catch (err) {
+    logger.error?.(`[CronCierreAuto] error: ${err.message}`) || console.error('[CronCierreAuto]', err.message);
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(tickCierreAuto, 90 * 1000);
+  setInterval(tickCierreAuto, 60 * 60 * 1000);
+}
+
 module.exports = app;

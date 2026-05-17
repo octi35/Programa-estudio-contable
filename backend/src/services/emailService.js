@@ -56,4 +56,66 @@ async function enviarPasswordReset(destinatario, nombre, resetUrl) {
   });
 }
 
-module.exports = { enviarRecibo, verificarConexion, enviarPasswordReset };
+async function enviarAlertaVencimientos(destinatario, nombre, estudio, vencimientos) {
+  const transporter = getTransporter();
+
+  // Agrupa por empresa
+  const porEmpresa = {};
+  for (const v of vencimientos) {
+    const key = v.empresa?.razonSocial || 'Sin empresa';
+    (porEmpresa[key] = porEmpresa[key] || []).push(v);
+  }
+
+  const TIPO_COLOR = { F931: '#0a5cff', IVA: '#10b981', IIBB: '#f59e0b', MONOTRIBUTO: '#8b5cf6', GANANCIAS: '#ef4444', SUELDOS: '#06b6d4' };
+  const fmtFecha = (f) => new Date(f).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const colorDias = (n) => n <= 1 ? '#dc2626' : n <= 3 ? '#ea580c' : n <= 7 ? '#ca8a04' : '#6b7280';
+
+  let html = `
+    <div style="font-family:Arial,sans-serif;max-width:680px;margin:0 auto;padding:24px;background:#f5f7fa">
+      <div style="background:#0f172a;color:#fff;border-radius:8px 8px 0 0;padding:20px 24px">
+        <h2 style="margin:0;font-size:18px">📅 Vencimientos próximos — ${estudio.razonSocial}</h2>
+        <p style="margin:4px 0 0;color:#cbd5e1;font-size:13px">${vencimientos.length} vencimientos en los próximos 7 días</p>
+      </div>
+      <div style="background:#fff;border-radius:0 0 8px 8px;padding:24px;border:1px solid #e5e7eb;border-top:0">
+        <p style="margin:0 0 16px;color:#374151;font-size:14px">Hola <b>${nombre}</b>,</p>
+        <p style="margin:0 0 20px;color:#374151;font-size:14px">Te recordamos los vencimientos pendientes:</p>`;
+
+  for (const [empresa, items] of Object.entries(porEmpresa)) {
+    html += `
+      <div style="margin-bottom:20px">
+        <h3 style="margin:0 0 8px;font-size:14px;color:#0f172a;border-bottom:2px solid #e5e7eb;padding-bottom:6px">${empresa}</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">`;
+    for (const v of items) {
+      const color = TIPO_COLOR[v.tipo] || '#6b7280';
+      html += `
+          <tr>
+            <td style="padding:6px 0;width:90px">
+              <span style="background:${color};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">${v.tipo}</span>
+            </td>
+            <td style="padding:6px 0;color:#374151">${v.descripcion}</td>
+            <td style="padding:6px 0;text-align:right;color:${colorDias(v.diasRestantes)};font-weight:600;white-space:nowrap">
+              ${fmtFecha(v.fecha)}<br/>
+              <span style="font-size:11px;font-weight:400">${v.diasRestantes <= 0 ? 'VENCIDO' : `en ${v.diasRestantes}d`}</span>
+            </td>
+          </tr>`;
+    }
+    html += '</table></div>';
+  }
+
+  html += `
+        <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px">
+          <p style="margin:0">Este es un resumen automático del sistema EstudioPRO.</p>
+          <p style="margin:8px 0 0">Para deshabilitar estas alertas, agregá el parámetro fiscal <code>ALERTAS_EMAIL_VENCIMIENTOS</code> = <code>false</code> en la configuración del estudio.</p>
+        </div>
+      </div>
+    </div>`;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: destinatario,
+    subject: `📅 ${vencimientos.length} vencimientos próximos — ${estudio.razonSocial}`,
+    html,
+  });
+}
+
+module.exports = { enviarRecibo, verificarConexion, enviarPasswordReset, enviarAlertaVencimientos };

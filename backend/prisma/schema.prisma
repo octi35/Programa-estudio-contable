@@ -112,6 +112,11 @@ model Empresa {
   web                String?
   actividadPrincipal String?
   logo               String?
+  reciboColor        String?
+  reciboLayout       String?   @default("CLASICO")
+  reciboMostrarQR    Boolean   @default(true)
+  reciboMostrarDuplicado Boolean @default(true)
+  reciboFirma        String?
   convenioId         String?
   estudioId          String
   activa             Boolean   @default(true)
@@ -135,6 +140,7 @@ model Empresa {
   monotributo         MonotributoCliente?
   presupuestos        Presupuesto[]
   comprobantesElect   ComprobanteElectronico[]
+  coeficientesCM      CoeficienteCM[]
 
   @@map("empresas")
 }
@@ -873,6 +879,22 @@ model DeclaracionIIBB {
   @@index([empresaId, anio, mes])
   @@index([estado])
   @@map("declaraciones_iibb")
+}
+
+model CoeficienteCM {
+  id           String   @id @default(uuid())
+  empresaId    String
+  anio         Int
+  jurisdiccion String
+  coeficiente  Decimal  @db.Decimal(8, 6)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, anio, jurisdiccion])
+  @@index([empresaId, anio])
+  @@map("coeficientes_cm")
 }
 
 enum EstadoDeclaracion {

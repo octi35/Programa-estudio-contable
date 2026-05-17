@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon } from '@heroicons/react/24/outline';
+import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon, EnvelopeIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import Modal from '../components/Modal';
+import { confirm } from '../components/confirm';
 import { openAuthed, downloadWithProgress } from '../utils/download';
 import { formatMoney, mesNombre, estadoLiquidacionLabel, tipoLiquidacionLabel, MESES } from '../utils/format';
 
@@ -371,6 +372,41 @@ export default function Liquidaciones() {
     openAuthed(`/api/liquidaciones/${id}/recibo`);
   };
 
+  const enviarRecibosBulk = async () => {
+    if (!filtros.empresaId) return;
+    const empresa = empresas.find(e => e.id === filtros.empresaId);
+    const periodo = `${mesNombre(filtros.mes)} ${filtros.anio}`;
+    if (!await confirm({
+      title: 'Enviar recibos por email',
+      message: `Se enviarán por email los recibos PDF de TODAS las liquidaciones CONFIRMADAS de ${empresa?.razonSocial} para el período ${periodo}.`,
+      details: [
+        'Solo se envían a empleados que tengan email registrado.',
+        'Requiere SMTP configurado en el servidor.',
+        'Puede tardar varios minutos según la cantidad de empleados.',
+      ],
+      confirmText: 'Enviar recibos',
+    })) return;
+
+    const toastId = toast.loading('Generando y enviando recibos...');
+    try {
+      const r = await api.post('/liquidaciones/enviar-recibos-bulk', {
+        empresaId: filtros.empresaId,
+        anio: Number(filtros.anio),
+        mes: Number(filtros.mes),
+      });
+      const { total, enviados, sinEmail, errores } = r.data;
+      toast.success(
+        `Enviados: ${enviados}/${total}` +
+        (sinEmail > 0 ? ` · Sin email: ${sinEmail}` : '') +
+        (errores > 0 ? ` · Errores: ${errores}` : ''),
+        { id: toastId, duration: 6000 }
+      );
+    } catch (_) {
+      toast.dismiss(toastId);
+      // interceptor mostró el error
+    }
+  };
+
   const totalNeto = liquidaciones.reduce((s, l) => s + Number(l.totalNeto), 0);
   const totalHaberes = liquidaciones.reduce((s, l) => s + Number(l.totalHaberes), 0);
 
@@ -423,6 +459,9 @@ export default function Liquidaciones() {
                 })}
                 className="btn-secondary text-sm">
                 <DocumentTextIcon className="w-4 h-4" /> Todos los Recibos PDF
+              </button>
+              <button onClick={enviarRecibosBulk} className="btn-secondary text-sm">
+                <EnvelopeIcon className="w-4 h-4" /> Enviar recibos por email
               </button>
             </>
           )}

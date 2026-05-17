@@ -38,4 +38,23 @@ router.get('/backup', auth, requireRol('ADMIN'), async (req, res, next) => {
   }
 });
 
+// POST /api/admin/alertas-vencimientos/ejecutar — dispara el cron manualmente
+// (sin esperar al horario programado). Útil para probar la configuración SMTP.
+router.post('/alertas-vencimientos/ejecutar', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const { ejecutarCronAlertas } = require('../services/cronAlertas');
+    const resumen = await ejecutarCronAlertas({ forzar: req.body?.forzar === true });
+    res.json({ resumen, total: resumen.length });
+  } catch (err) { next(err); }
+});
+
+// POST /api/admin/cierre-automatico/ejecutar — dispara el cierre automático manualmente
+router.post('/cierre-automatico/ejecutar', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const { ejecutarCierreAutomatico } = require('../services/cronCierreAutomatico');
+    const resumen = await ejecutarCierreAutomatico();
+    res.json({ resumen, total: resumen.length });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

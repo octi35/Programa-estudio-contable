@@ -36,12 +36,12 @@ export default function LibroIVA() {
   const exportarAFIP = async () => {
     if (!filters.empresaId) return;
     try {
-      const resp = await api.get('/iva/exportar-afip', { params: filters, responseType: 'blob' });
+      const resp = await api.get('/iva/exportar-afip-zip', { params: filters, responseType: 'blob' });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement('a');
       const tipo = filters.tipoMovimiento === 'COMPRA' ? 'compras' : 'ventas';
       a.href = url;
-      a.download = `iva_${tipo}_${filters.anio}${String(filters.mes).padStart(2,'0')}.txt`;
+      a.download = `iva_${tipo}_${filters.anio}${String(filters.mes).padStart(2,'0')}.zip`;
       a.click();
     } catch { toast.error('Error al exportar'); }
   };
@@ -52,8 +52,8 @@ export default function LibroIVA() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Libro IVA</h1>
-        <button onClick={exportarAFIP} className="flex items-center gap-2 border px-4 py-2 rounded-lg text-sm hover:bg-gray-50">
-          <ArrowDownTrayIcon className="w-4 h-4" /> Exportar AFIP (.txt)
+        <button onClick={exportarAFIP} className="flex items-center gap-2 border px-4 py-2 rounded-lg text-sm bg-white hover:bg-gray-50 shadow-sm transition-all focus:ring-2 focus:ring-indigo-500">
+          <ArrowDownTrayIcon className="w-5 h-5 text-indigo-600" /> <span className="font-medium text-gray-700">Exportar AFIP (.zip)</span>
         </button>
       </div>
 

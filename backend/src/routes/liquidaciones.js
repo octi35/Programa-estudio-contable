@@ -670,6 +670,92 @@ router.get('/:id/recibo', auth, [param('id').isUUID(), validate], async (req, re
   }
 });
 
+// POST /api/liquidaciones/enviar-recibos-bulk — envía por email los recibos
+// PDF de todas las liquidaciones CONFIRMADAS de un período a sus empleados.
+// Body: { empresaId, anio, mes, tipo? }
+router.post('/enviar-recibos-bulk', auth, [
+  body('empresaId').isUUID(),
+  body('anio').isInt({ min: 2000, max: 2099 }),
+  body('mes').isInt({ min: 1, max: 12 }),
+  validate,
+], async (req, res, next) => {
+  try {
+    const { empresaId, anio, mes, tipo = 'MENSUAL' } = req.body;
+
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: { periodo: { empresaId, anio: Number(anio), mes: Number(mes), tipo }, estado: 'CONFIRMADO' },
+      include: {
+        empleado: { include: { empresa: { include: { estudio: true, convenio: true } } } },
+        periodo: true,
+        detalles: { orderBy: { orden: 'asc' } },
+      },
+      orderBy: { empleado: { apellido: 'asc' } },
+    });
+
+    if (liquidaciones.length === 0) {
+      return res.status(404).json({ error: 'No hay liquidaciones CONFIRMADAS en este período' });
+    }
+
+    const { enviarRecibo } = require('../services/emailService');
+
+    const enviados = [];
+    const sinEmail = [];
+    const errores = [];
+
+    // Procesar en chunks de 3 en paralelo (SMTP puede limitar conexiones simultáneas)
+    const CHUNK = 3;
+    for (let i = 0; i < liquidaciones.length; i += CHUNK) {
+      const slice = liquidaciones.slice(i, i + CHUNK);
+      await Promise.allSettled(slice.map(async (liq) => {
+        const empleado = liq.empleado;
+        const nombre = `${empleado.apellido}, ${empleado.nombre}`;
+        if (!empleado.email) {
+          sinEmail.push({ empleadoId: empleado.id, nombre, cuil: empleado.cuil });
+          return;
+        }
+        try {
+          const pdfBuffer = await pdfService.generarRecibo(liq);
+          const nombreArchivo = `recibo_${empleado.apellido}_${anio}${String(mes).padStart(2, '0')}.pdf`;
+          await enviarRecibo(empleado.email, nombre, pdfBuffer, nombreArchivo);
+          enviados.push({ empleadoId: empleado.id, nombre, email: empleado.email });
+        } catch (e) {
+          errores.push({ empleadoId: empleado.id, nombre, email: empleado.email, error: e.message });
+        }
+      }));
+    }
+
+    await logAccion({
+      usuarioId: req.usuario.id,
+      estudioId: req.usuario.estudioId,
+      accion: 'ENVIAR_RECIBOS_BULK',
+      entidad: 'PeriodoLiquidacion',
+      detalle: {
+        empresaId, anio, mes, tipo,
+        total: liquidaciones.length, enviados: enviados.length, sinEmail: sinEmail.length, errores: errores.length,
+      },
+      ip: req.ip,
+    });
+
+    res.json({
+      total: liquidaciones.length,
+      enviados: enviados.length,
+      sinEmail: sinEmail.length,
+      errores: errores.length,
+      detalle: { enviados, sinEmail, errores },
+    });
+  } catch (err) {
+    if (err.message?.includes('SMTP') || err.message?.includes('nodemailer')) {
+      return res.status(503).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
 // POST /api/liquidaciones/:id/enviar-recibo
 router.post('/:id/enviar-recibo', auth, [param('id').isUUID(), validate], async (req, res, next) => {
   try {

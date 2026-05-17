@@ -100,18 +100,29 @@ export default function Comprobantes() {
         <h1 className="text-2xl font-bold text-gray-900">Comprobantes IVA</h1>
         <div className="flex gap-2 flex-wrap">
           <button onClick={handleExportar} className="btn-secondary flex items-center gap-2 text-sm px-3 py-2 border rounded-lg hover:bg-gray-50">
-            <ArrowDownTrayIcon className="w-4 h-4" /> Exportar AFIP
-          </button>
-          {filters.empresaId && (
-            <ImportExcelButton
-              endpoint="/iva/comprobantes/importar"
-              label="Importar Excel"
-              title="Importar comprobantes IVA"
-              extraData={{ empresaId: filters.empresaId }}
-              columnas={[
-                { nombre: 'fecha', descripcion: 'DD/MM/AAAA o YYYY-MM-DD', requerido: true },
-                { nombre: 'tipo_movimiento', descripcion: 'COMPRA o VENTA', requerido: true },
-                { nombre: 'tipo_comprobante', descripcion: 'FACTURA_A, FACTURA_B, NOTA_CREDITO_A...', requerido: true },
+              <ArrowDownTrayIcon className="w-4 h-4" /> Exportar AFIP (.zip)
+            </button>
+            {filters.empresaId && (
+              <>
+                <ImportExcelButton
+                  endpoint="/iva/comprobantes/importar-afip"
+                  label="Importar AFIP"
+                  title="Importar Mis Comprobantes AFIP"
+                  extraData={{ empresaId: filters.empresaId, tipoMovimiento: filters.tipoMovimiento || 'COMPRA' }}
+                  columnas={[
+                    { nombre: 'Archivo', descripcion: 'Soporta excel original AFIP', requerido: true }
+                  ]}
+                  onSuccess={() => { toast.success('Importación AFIP exitosa'); cargarComprobantes(); }}
+                />
+                <ImportExcelButton
+                  endpoint="/iva/comprobantes/importar"
+                  label="Importar Excel"
+                  title="Importar comprobantes IVA"
+                  extraData={{ empresaId: filters.empresaId }}
+                  columnas={[
+                    { nombre: 'fecha', descripcion: 'DD/MM/AAAA o YYYY-MM-DD', requerido: true },
+                    { nombre: 'tipo_movimiento', descripcion: 'COMPRA o VENTA', requerido: true },
+                    { nombre: 'tipo_comprobante', descripcion: 'FACTURA_A, FACTURA_B, NOTA_CREDITO_A...', requerido: true },
                 { nombre: 'pto_venta', descripcion: 'Punto de venta (número)' },
                 { nombre: 'numero', descripcion: 'Número de comprobante', requerido: true },
                 { nombre: 'cuit_proveedor', descripcion: 'CUIT (se crea proveedor si no existe)' },

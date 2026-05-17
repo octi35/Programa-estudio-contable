@@ -44,6 +44,63 @@ router.get('/jurisdicciones', auth, (req, res) => {
   res.json(JURISDICCIONES);
 });
 
+// GET /api/iibb/coeficientes?empresaId&anio
+router.get('/coeficientes', auth, [
+  query('empresaId').isUUID(),
+  query('anio').isInt({ min: 2000, max: 2099 }),
+  validate,
+], async (req, res, next) => {
+  try {
+    const { empresaId, anio } = req.query;
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const coeficientes = await prisma.coeficienteCM.findMany({
+      where: { empresaId, anio: Number(anio) },
+      orderBy: { jurisdiccion: 'asc' },
+    });
+    res.json(coeficientes);
+  } catch (err) { next(err); }
+});
+
+// PUT /api/iibb/coeficientes
+router.put('/coeficientes', auth, [
+  body('empresaId').isUUID(),
+  body('anio').isInt({ min: 2000, max: 2099 }),
+  body('coeficientes').isArray(),
+  validate,
+], async (req, res, next) => {
+  try {
+    const { empresaId, anio, coeficientes } = req.body;
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const payload = (coeficientes || []).map((c) => {
+      const raw = Number(c.coeficiente);
+      const coef = raw > 1 ? raw / 100 : raw;
+      return {
+        empresaId,
+        anio: Number(anio),
+        jurisdiccion: String(c.jurisdiccion || '').trim(),
+        coeficiente: isNaN(coef) ? 0 : coef,
+      };
+    }).filter(c => c.jurisdiccion);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.coeficienteCM.deleteMany({ where: { empresaId, anio: Number(anio) } });
+      if (payload.length > 0) {
+        await tx.coeficienteCM.createMany({ data: payload });
+      }
+    });
+
+    res.json({ total: payload.length });
+  } catch (err) { next(err); }
+});
+
 // GET /api/iibb/resumen?empresaId&anio
 router.get('/resumen', auth, [
   query('empresaId').isUUID(),

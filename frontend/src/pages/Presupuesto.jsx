@@ -52,7 +52,7 @@ export default function Presupuesto() {
     if (!presupuesto?.id) return;
     try {
       const { data } = await api.get(`/presupuesto/${presupuesto.id}/comparativo`);
-      setComparativo(data || []);
+      setComparativo(data?.comparativo || []);
     } catch {}
   }, [presupuesto?.id]);
 
@@ -62,7 +62,11 @@ export default function Presupuesto() {
   const handleCrear = async () => {
     setCreando(true);
     try {
-      const { data } = await api.post('/presupuesto', { empresaId, anio });
+      const { data } = await api.post('/presupuesto', { 
+        empresaId, 
+        anio,
+        nombre: `Presupuesto ${anio}` 
+      });
       setPresupuesto(data);
       setItems(data.items || []);
       toast.success('Presupuesto creado');
@@ -224,7 +228,7 @@ export default function Presupuesto() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {comparativo.map((item, idx) => (
+                    {Array.isArray(comparativo) && comparativo.map((item, idx) => (
                       <tr key={idx} className="hover:bg-gray-50">
                         <td className="px-4 py-2 font-medium text-gray-800 sticky left-0 bg-white">{item.cuenta}</td>
                         {MESES.map((_, i) => {

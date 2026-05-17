@@ -36,7 +36,7 @@ const DOLAR_LABELS = {
   cripto: { label: 'Cripto', color: 'bg-[#0A5CFF]' },
 };
 
-const PANEL_CLASS = 'rounded-2xl border border-black/10 bg-white shadow-[0_8px_24px_rgba(2,6,23,0.06)]';
+const PANEL_CLASS = 'rounded-3xl border border-gray-100 bg-white/70 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.02)]';
 
 // ── Componentes de vencimientos ────────────────────────────────────────────
 function calcularVencimientos() {
@@ -118,9 +118,8 @@ function MiniSparkline({ positive }) {
     ? 'M0 21 L16 19 L32 13 L48 15 L64 8 L80 11 L100 6'
     : 'M0 21 L14 20 L28 18 L42 15 L56 13 L70 11 L84 9 L100 8';
   return (
-    <svg viewBox="0 0 100 24" className="h-6 w-20">
-      <path d={path} fill="none" stroke={positive ? '#0A5CFF' : '#93A3C8'} strokeWidth="2" strokeLinecap="round" />
-      <path d={`${path} L100 24 L0 24 Z`} fill={positive ? 'rgba(10,92,255,0.16)' : 'rgba(148,163,184,0.14)'} />
+    <svg viewBox="0 0 100 24" className="h-6 w-16 opacity-80">
+      <path d={path} fill="none" stroke={positive ? '#3b82f6' : '#94a3b8'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -179,38 +178,37 @@ function PanelDolar() {
       {error && <p className="text-xs text-red-500 text-center py-2">No se pudo obtener la cotización en este momento</p>}
 
       {!loading && !error && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {ordenadas.slice(0, 4).map(c => {
-            const info = DOLAR_LABELS[c.casa] || { label: c.nombre, color: 'bg-slate-600' };
+            const info = DOLAR_LABELS[c.casa] || { label: c.nombre, color: 'bg-gray-100' };
             const spread = c.compra && c.venta ? (Math.abs((c.venta - c.compra) / c.compra) * 0.1).toFixed(1) : '0.0';
             const bullish = c.casa === 'cripto' || c.casa === 'bolsa';
             return (
-              <div key={c.casa} className="rounded-2xl border border-[#3D414C] bg-[#4C505B] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-[11px] font-semibold text-white/90 tracking-[0.18em] uppercase">Dólar {info.label}</p>
-                  <span className={`h-2.5 w-2.5 rounded-full ${bullish ? 'bg-[#0A5CFF]' : 'bg-slate-400'}`} />
+              <div key={c.casa} className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.06)] transition-all duration-300 hover:-translate-y-0.5">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-[10px] font-bold text-gray-400 tracking-[0.2em] uppercase">Dólar {info.label}</p>
+                  <span className={`h-2 w-2 rounded-full shadow-sm ${bullish ? 'bg-blue-500 shadow-blue-500/50' : 'bg-gray-300'}`} />
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-[#0B0F1C] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <p className="text-slate-400">Venta</p>
-                    <p className="mt-1 text-base font-semibold text-white">{fmt(c.venta)}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider mb-0.5">Venta</p>
+                    <p className="text-xl font-bold text-gray-900 tracking-tight">{fmt(c.venta)}</p>
                   </div>
-                  <div className="rounded-lg bg-[#0B0F1C] px-2.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                    <p className="text-slate-400">Compra</p>
-                    <p className="mt-1 text-base font-semibold text-white/90">{fmt(c.compra)}</p>
+                  <div className="pl-3 border-l border-gray-100">
+                    <p className="text-[10px] uppercase font-semibold text-gray-400 tracking-wider mb-0.5">Compra</p>
+                    <p className="text-xl font-bold text-gray-600 tracking-tight">{fmt(c.compra)}</p>
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-end justify-between">
-                  <span className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold ${bullish ? 'bg-[#0A5CFF] text-white' : 'bg-[#2B2F3A] text-slate-200'}`}>
-                    {bullish ? '▲' : '•'} {spread}%
-                  </span>
+                <div className="mt-5 flex items-end justify-between pt-4 border-t border-gray-50">
+                  <div className="flex flex-col items-start gap-1">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${bullish ? 'text-blue-700 bg-blue-50' : 'text-gray-600 bg-gray-100'}`}>
+                      {bullish ? '↑' : '•'} {spread}%
+                    </span>
+                    <span className="text-[9px] text-gray-400 font-medium ml-1">Últimas 24 hs</span>
+                  </div>
                   <MiniSparkline positive={bullish} />
-                </div>
-
-                <div className="mt-2 text-right text-[10px] text-slate-300/60">
-                  Últimas 24 hs
                 </div>
               </div>
             );
@@ -250,6 +248,112 @@ function PanelARCA() {
 }
 
 // ── Panel Pendientes de hoy ───────────────────────────────────────────────
+// ── Panel de Alertas Críticas (Red Flags) ─────────────────────────────────
+function PanelAlertasCriticas({ navigate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [expandido, setExpandido] = useState(null); // key del grupo expandido
+
+  useEffect(() => {
+    api.get('/dashboard/alertas-criticas')
+      .then(r => setData(r.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading || !data || data.total === 0) return null;
+
+  const grupos = [
+    { key: 'empleadosSinCUIL',          label: 'Empleados sin CUIL válido',          color: 'red',    nav: '/empleados' },
+    { key: 'empleadosSinDNI',           label: 'Empleados sin DNI',                  color: 'orange', nav: '/empleados' },
+    { key: 'empleadosSinCBU',           label: 'Empleados sin CBU',                  color: 'yellow', nav: '/empleados' },
+    { key: 'liquidacionesBorrador',     label: 'Liquidaciones BORRADOR (>3 días)',   color: 'orange', nav: '/liquidaciones' },
+    { key: 'comprobantesSinProveedor',  label: 'Comprobantes IVA sin proveedor',     color: 'yellow', nav: '/iva/comprobantes' },
+    { key: 'cuentasInactivas',          label: 'Cuentas bancarias sin movimientos (30d)', color: 'yellow', nav: '/bancos' },
+    { key: 'asientosDescuadrados',      label: 'Asientos contables descuadrados',    color: 'red',    nav: '/contabilidad/asientos' },
+    { key: 'monotributistasExcedidos',  label: 'Monotributistas que superaron tope', color: 'red',    nav: '/monotributo' },
+  ];
+
+  const activos = grupos.filter(g => data.alertas[g.key]?.count > 0);
+  if (activos.length === 0) return null;
+
+  const colorClasses = {
+    red:    { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-700',    badge: 'bg-red-100 text-red-700' },
+    orange: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', badge: 'bg-orange-100 text-orange-700' },
+    yellow: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', badge: 'bg-yellow-100 text-yellow-800' },
+  };
+
+  return (
+    <div className={`${PANEL_CLASS} overflow-hidden`}>
+      <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-red-100 flex items-center justify-center">
+            <ExclamationTriangleIcon className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-gray-900 tracking-tight">Alertas críticas</h2>
+            <p className="text-xs text-gray-500">{data.total} elementos requieren tu atención</p>
+          </div>
+        </div>
+        <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full">{activos.length} tipos</span>
+      </div>
+
+      <div className="divide-y divide-gray-100">
+        {activos.map(g => {
+          const items = data.alertas[g.key];
+          const cls = colorClasses[g.color];
+          const isOpen = expandido === g.key;
+          return (
+            <div key={g.key} className={`${cls.bg} ${cls.border} border-l-4`}>
+              <button
+                onClick={() => setExpandido(isOpen ? null : g.key)}
+                className="w-full px-5 py-3 flex items-center justify-between hover:bg-black/5 transition"
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`${cls.badge} px-2.5 py-0.5 rounded-full text-xs font-bold`}>{items.count}</span>
+                  <span className={`text-sm font-medium ${cls.text}`}>{g.label}</span>
+                </div>
+                <span className="text-xs text-gray-400">{isOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {isOpen && (
+                <div className="px-5 pb-4 pt-1 max-h-64 overflow-y-auto">
+                  <ul className="text-xs space-y-1.5">
+                    {items.items.slice(0, 15).map((item, i) => (
+                      <li key={i} className="flex items-center justify-between bg-white/60 rounded px-2 py-1.5">
+                        <span className="text-gray-700 truncate flex-1 mr-2">
+                          {/* Render flexible según el tipo de alerta */}
+                          {item.apellido ? `${item.apellido}, ${item.nombre}` :
+                            item.descripcion ? item.descripcion :
+                            item.empresa?.razonSocial || item.empresa || item.banco || `#${item.numero || item.id?.slice(0, 8)}`}
+                          {item.empleado && ` — ${item.empleado.apellido}, ${item.empleado.nombre}`}
+                          {item.empresa?.razonSocial && item.apellido && (
+                            <span className="text-gray-400"> · {item.empresa.razonSocial}</span>
+                          )}
+                          {item.exceso != null && (
+                            <span className="text-red-600 font-medium"> · Excedió tope (Cat. {item.categoriaActual})</span>
+                          )}
+                          {item.diferencia != null && (
+                            <span className="text-red-600 font-medium"> · Dif: {formatMoney(item.diferencia)}</span>
+                          )}
+                        </span>
+                        <button onClick={() => navigate(g.nav)} className="text-blue-600 hover:text-blue-800 text-xs whitespace-nowrap">Ver →</button>
+                      </li>
+                    ))}
+                    {items.count > 15 && (
+                      <li className="text-center text-gray-400 pt-1">+ {items.count - 15} más</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function PanelPendientes({ navigate }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -495,6 +599,9 @@ export default function Dashboard() {
         <StatCard icon={CalculatorIcon} label="Liquidaciones del mes" value={resumen.liquidacionesMes} color="purple" />
         <StatCard icon={CurrencyDollarIcon} label="Total haberes mes" value={formatMoney(resumen.totalMensual)} color="orange" />
       </div>
+
+      {/* Alertas críticas (red flags) */}
+      <PanelAlertasCriticas navigate={navigate} />
 
       {/* Pendientes de hoy */}
       <PanelPendientes navigate={navigate} />

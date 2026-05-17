@@ -194,4 +194,7 @@ router.get('/proximos', auth, [
   } catch (err) { next(err); }
 });
 
+// Exporta helpers para que el cron de alertas y otros consumidores los reusen.
 module.exports = router;
+module.exports.calcularVencimientos = calcularVencimientos;
+module.exports.flattenForEmpresa = flattenForEmpresa;

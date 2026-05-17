@@ -170,8 +170,8 @@ export default function Honorarios() {
     return acc;
   }, {});
 
-  const totalPendiente = facturas.filter(f => f.estado !== 'COBRADA').reduce((s, f) => s + parseFloat(f.total || 0), 0);
-  const totalCobrado = facturas.filter(f => f.estado === 'COBRADA').reduce((s, f) => s + parseFloat(f.total || 0), 0);
+  const totalPendiente = Array.isArray(facturas) ? facturas.filter(f => f.estado !== 'COBRADA').reduce((s, f) => s + parseFloat(f.total || 0), 0) : 0;
+  const totalCobrado = Array.isArray(facturas) ? facturas.filter(f => f.estado === 'COBRADA').reduce((s, f) => s + parseFloat(f.total || 0), 0) : 0;
 
   return (
     <div className="space-y-4">
@@ -292,7 +292,7 @@ export default function Honorarios() {
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {facturas.map(f => (
+                  {Array.isArray(facturas) && facturas.map(f => (
                     <tr key={f.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-medium text-gray-800">{f.empresa?.razonSocial}</td>
                       <td className="px-4 py-3 text-gray-600">{f.concepto}</td>

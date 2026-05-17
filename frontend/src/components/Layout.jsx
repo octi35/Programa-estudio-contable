@@ -137,29 +137,31 @@ function NavItem({ item, depth = 0 }) {
     return (
       <NavLink to={item.to}
         className={({ isActive }) =>
-          `flex items-center gap-3 rounded-lg text-sm font-medium transition-colors
-          ${depth > 0 ? 'px-3 py-2 ml-4' : 'px-3 py-2.5'}
+          `flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200
+          ${depth > 0 ? 'px-4 py-2 ml-3 border-l-2 border-transparent' : 'px-4 py-3'}
           ${isActive
-            ? 'bg-blue-600 text-white'
-            : 'text-blue-200 hover:bg-blue-800 hover:text-white'}`
+            ? depth > 0 
+              ? 'text-blue-400 border-blue-500 bg-blue-900/20' 
+              : 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+            : 'text-blue-100/70 hover:bg-white/5 hover:text-white'}`
         }>
-        {Icon && <Icon className="w-4 h-4 flex-shrink-0" />}
+        {Icon && <Icon className={`w-5 h-5 flex-shrink-0 ${depth > 0 ? 'w-4 h-4' : ''}`} />}
         <span>{item.label}</span>
       </NavLink>
     );
   }
 
   return (
-    <div>
+    <div className="mb-1">
       <button onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-          ${isActiveParent ? 'bg-blue-800 text-white' : 'text-blue-200 hover:bg-blue-800 hover:text-white'}`}>
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200
+          ${isActiveParent ? 'bg-white/10 text-white shadow-inner' : 'text-blue-100/70 hover:bg-white/5 hover:text-white'}`}>
         {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
         <span className="flex-1 text-left">{item.label}</span>
-        {open ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+        {open ? <ChevronDownIcon className="w-4 h-4 opacity-70" /> : <ChevronRightIcon className="w-4 h-4 opacity-70" />}
       </button>
       {open && (
-        <div className="mt-1 space-y-0.5">
+        <div className="mt-1 mb-2 space-y-1">
           {item.children.map(child => (
             <NavItem key={child.to} item={child} depth={depth + 1} />
           ))}
@@ -191,53 +193,55 @@ export default function Layout() {
   const handleLogout = () => { logout(); navigate('/login'); };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#1e3a5f] transform transition-transform duration-200 ease-in-out
+    <div className="flex h-screen bg-gray-50/50">
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-gradient-to-b from-[#182B49] to-[#12223c] shadow-2xl lg:shadow-xl transform transition-transform duration-300 ease-in-out border-r border-[#263e62]
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:flex lg:flex-col`}>
 
-        <div className="flex items-center justify-between h-16 px-5 border-b border-blue-900 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-blue-400 rounded-lg flex items-center justify-center">
-              <CalculatorIcon className="w-5 h-5 text-white" />
+        <div className="flex items-center justify-between h-20 px-6 border-b border-white/5 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30">
+              <CalculatorIcon className="w-6 h-6 text-white" />
             </div>
             <div>
-              <p className="text-white font-bold text-sm leading-none">EstudioPRO</p>
-              <p className="text-blue-300 text-xs">Sistema Contable</p>
+              <p className="text-white font-bold text-lg tracking-tight leading-tight">EstudioPRO</p>
+              <p className="text-blue-300/80 text-xs font-medium">Sistema Contable</p>
             </div>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-blue-300 hover:text-white">
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-2 rounded-lg text-blue-300/70 hover:text-white hover:bg-white/10 transition-colors">
             <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
         {usuario?.estudio && (
-          <div className="px-4 py-3 border-b border-blue-900 bg-blue-900/30 flex-shrink-0">
-            <p className="text-blue-200 text-xs font-medium truncate">{usuario.estudio.razonSocial}</p>
-            <p className="text-blue-400 text-xs">CUIT: {usuario.estudio.cuit}</p>
+          <div className="px-6 py-4 border-b border-white/5 bg-white/[0.02] flex-shrink-0">
+            <p className="text-blue-100 text-sm font-semibold truncate tracking-wide">{usuario.estudio.razonSocial}</p>
+            <p className="text-blue-300/70 text-xs font-mono mt-0.5">CUIT: {usuario.estudio.cuit}</p>
           </div>
         )}
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto custom-scrollbar">
           {menuConfig.map((item, i) => (
             <NavItem key={item.to || item.label} item={item} />
           ))}
         </nav>
 
-        <div className="px-3 py-3 border-t border-blue-900 flex-shrink-0">
-          <div className="flex items-center gap-2.5 px-3 py-2">
-            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+        <div className="p-4 border-t border-white/5 flex-shrink-0 bg-[#0f1d33]">
+          <div className="flex items-center gap-3 px-2 py-2">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white text-sm font-bold shadow-md shadow-blue-900/50">
               {usuario?.nombre?.[0]?.toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-white text-xs font-medium truncate">{usuario?.nombre}</p>
-              <p className="text-blue-400 text-xs capitalize">{usuario?.rol?.toLowerCase()}</p>
+              <p className="text-white text-sm font-medium truncate">{usuario?.nombre}</p>
+              <p className="text-blue-300/70 text-xs font-medium capitalize">{usuario?.rol?.toLowerCase()}</p>
             </div>
-            <button onClick={() => setShowCambiarPass(true)} title="Cambiar contraseña" className="text-blue-400 hover:text-white transition-colors">
-              <KeyIcon className="w-4 h-4" />
-            </button>
-            <button onClick={handleLogout} title="Cerrar sesión" className="text-blue-400 hover:text-white transition-colors">
-              <ArrowRightOnRectangleIcon className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setShowCambiarPass(true)} title="Cambiar contraseña" className="p-2 rounded-lg text-blue-300/70 hover:text-white hover:bg-white/10 transition-colors">
+                <KeyIcon className="w-4 h-4" />
+              </button>
+              <button onClick={handleLogout} title="Cerrar sesión" className="p-2 rounded-lg text-blue-300/70 hover:text-red-400 hover:bg-red-400/10 transition-colors">
+                <ArrowRightOnRectangleIcon className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -260,11 +264,13 @@ export default function Layout() {
 
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-2 w-full max-w-md text-left text-sm text-gray-400 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg px-3 py-1.5 transition-colors"
+            className="flex items-center gap-3 w-full max-w-md text-left text-sm text-slate-500 bg-slate-100/70 hover:bg-slate-200/60 border border-slate-200/80 rounded-xl px-4 py-2 transition-all duration-200 shadow-sm hover:shadow-md hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20 group"
             title="Búsqueda global (Ctrl+K)">
-            <MagnifyingGlassIcon className="w-4 h-4 text-gray-400" />
-            <span className="flex-1 truncate">Buscar empleados, empresas, comprobantes...</span>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono bg-white border border-gray-200 rounded">Ctrl+K</kbd>
+            <MagnifyingGlassIcon className="w-5 h-5 text-slate-400 group-hover:text-blue-500 transition-colors" />
+            <span className="flex-1 truncate font-medium">Buscar empleados, empresas, comprobantes...</span>
+            <kbd className="hidden sm:inline-flex items-center px-2 py-1 text-[10px] font-sans font-bold text-slate-500 bg-white border border-slate-200 rounded-md shadow-sm opacity-80 group-hover:opacity-100 transition-opacity">
+              <span>⌘</span> <span className="mx-0.5">/</span> <span className="mr-0.5">Ctrl</span> <span className="bg-slate-100 rounded px-1 ml-0.5">K</span>
+            </kbd>
           </button>
 
           <div className="flex-1" />
