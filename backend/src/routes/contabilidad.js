@@ -607,4 +607,61 @@ router.get('/balance-general', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/contabilidad/asientos/exportar?empresaId&desde&hasta&formato=csv|tango|bejerman
+// Exporta asientos para importación en software contable externo.
+router.get('/asientos/exportar', auth, async (req, res, next) => {
+  try {
+    const { empresaId, desde, hasta, formato = 'csv', incluirAnulados = 'false' } = req.query;
+    if (!empresaId) return res.status(400).json({ error: 'empresaId requerido' });
+
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const where = { empresaId };
+    if (incluirAnulados !== 'true') where.anulado = false;
+    if (desde || hasta) {
+      where.fecha = {};
+      if (desde) where.fecha.gte = new Date(desde);
+      if (hasta) {
+        const h = new Date(hasta);
+        h.setHours(23, 59, 59, 999);
+        where.fecha.lte = h;
+      }
+    }
+
+    const asientos = await prisma.asiento.findMany({
+      where,
+      include: {
+        lineas: {
+          include: { cuentaContable: { select: { codigo: true, nombre: true } } },
+          orderBy: { orden: 'asc' },
+        },
+      },
+      orderBy: [{ fecha: 'asc' }, { numero: 'asc' }],
+    });
+
+    const { exportar } = require('../services/exportContableService');
+    const resultado = exportar(asientos, formato);
+
+    if (resultado.tipo === 'tango') {
+      // Tango devuelve 2 archivos → empaqueto en ZIP
+      const JSZip = require('jszip');
+      const zip = new JSZip();
+      for (const [nombre, contenido] of Object.entries(resultado.archivos)) {
+        zip.file(nombre, contenido);
+      }
+      const buf = await zip.generateAsync({ type: 'nodebuffer' });
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="asientos_tango_${empresa.cuit}.zip"`);
+      return res.send(buf);
+    }
+
+    res.setHeader('Content-Type', resultado.mime);
+    res.setHeader('Content-Disposition', `attachment; filename="${resultado.nombre}"`);
+    res.send(resultado.contenido);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

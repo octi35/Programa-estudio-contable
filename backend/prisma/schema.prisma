@@ -47,6 +47,8 @@ model Estudio {
   afipPtoVta       Int?     @default(1)
   afipCertificado  String?
   afipClavePrivada String?
+  // Webhook bancario: secreto HMAC para validar payloads entrantes
+  webhookSecret    String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

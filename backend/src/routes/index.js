@@ -31,6 +31,7 @@ const externoRoutes = require('./externo');
 const facturacionRoutes = require('./facturacion');
 const dashboardRoutes = require('./dashboard');
 const searchRoutes = require('./search');
+const webhooksRoutes = require('./webhooks');
 
 router.use('/auth', authRoutes);
 router.use('/empresas', empresasRoutes);
@@ -63,5 +64,6 @@ router.use('/externo', externoRoutes);
 router.use('/facturacion', facturacionRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/search', searchRoutes);
+router.use('/webhooks', webhooksRoutes);
 
 module.exports = router;

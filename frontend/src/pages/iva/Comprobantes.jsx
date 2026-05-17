@@ -137,7 +137,8 @@ export default function Comprobantes() {
               ejemplo="15/05/2026, COMPRA, FACTURA_A, 1, 12345, 30712345678, ACME SA, 100000, 0, 0"
               onSuccess={() => fetchComprobantes()}
             />
-          )}
+          </>
+        )}
           <button onClick={() => { setEditando(null); setShowForm(true); }}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
             <PlusIcon className="w-4 h-4" /> Nuevo

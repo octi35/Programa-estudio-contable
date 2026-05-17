@@ -58,4 +58,50 @@ router.post('/logo', auth, requireRol('ADMIN'), upload.single('logo'), async (re
   } catch (err) { next(err); }
 });
 
+// GET /api/estudio/webhook-config — devuelve URL del webhook y si tiene secret configurado
+router.get('/webhook-config', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const estudio = await prisma.estudio.findUnique({
+      where: { id: req.usuario.estudioId },
+      select: { id: true, webhookSecret: true },
+    });
+    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    res.json({
+      webhookUrl: `${baseUrl}/api/webhooks/pagos/${estudio.id}`,
+      tieneSecret: !!estudio.webhookSecret,
+      // No exponemos el secret completo, solo los últimos 4 caracteres como pista
+      secretPista: estudio.webhookSecret ? `...${estudio.webhookSecret.slice(-4)}` : null,
+      docHmac: 'Header X-Webhook-Signature: <hex-hmac-sha256(body, secret)>',
+    });
+  } catch (err) { next(err); }
+});
+
+// POST /api/estudio/webhook-secret/rotar — genera un nuevo secret (invalida el anterior)
+router.post('/webhook-secret/rotar', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const crypto = require('crypto');
+    const nuevoSecret = crypto.randomBytes(32).toString('hex');
+    await prisma.estudio.update({
+      where: { id: req.usuario.estudioId },
+      data: { webhookSecret: nuevoSecret },
+    });
+    // Devolvemos el secret UNA SOLA VEZ — el cliente debe guardarlo.
+    res.json({
+      secret: nuevoSecret,
+      mensaje: 'Guardá este secret en un lugar seguro — solo se muestra una vez. El secret anterior queda invalidado.',
+    });
+  } catch (err) { next(err); }
+});
+
+// DELETE /api/estudio/webhook-secret — deshabilita los webhooks
+router.delete('/webhook-secret', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    await prisma.estudio.update({
+      where: { id: req.usuario.estudioId },
+      data: { webhookSecret: null },
+    });
+    res.json({ ok: true, mensaje: 'Webhooks deshabilitados' });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

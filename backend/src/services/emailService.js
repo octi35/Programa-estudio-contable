@@ -118,4 +118,58 @@ async function enviarAlertaVencimientos(destinatario, nombre, estudio, vencimien
   });
 }
 
-module.exports = { enviarRecibo, verificarConexion, enviarPasswordReset, enviarAlertaVencimientos };
+async function enviarRecordatorioCobro(destinatario, razonSocialEmpresa, estudio, facturas) {
+  const transporter = getTransporter();
+  const total = facturas.reduce((s, f) => s + Number(f.total), 0);
+  const fmtMoney = (n) => `$ ${Number(n).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`;
+  const fmtFecha = (d) => new Date(d).toLocaleDateString('es-AR');
+
+  let filas = '';
+  for (const f of facturas) {
+    filas += `
+      <tr>
+        <td style="padding:6px 0;color:#374151;border-bottom:1px solid #f3f4f6">${fmtFecha(f.fecha)}</td>
+        <td style="padding:6px 0;color:#374151;border-bottom:1px solid #f3f4f6">${f.concepto || `Honorarios ${f.mes}/${f.anio}`}</td>
+        <td style="padding:6px 0;color:#374151;border-bottom:1px solid #f3f4f6;text-align:right">${fmtMoney(f.total)}</td>
+      </tr>`;
+  }
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px;background:#f5f7fa">
+      <div style="background:#fff;border-radius:8px;padding:32px;border:1px solid #e5e7eb">
+        <h2 style="margin:0 0 16px;color:#0f172a">Recordatorio de honorarios pendientes</h2>
+        <p style="color:#374151">Estimados de <b>${razonSocialEmpresa}</b>,</p>
+        <p style="color:#374151">Les recordamos que tienen ${facturas.length} factura${facturas.length === 1 ? '' : 's'} pendiente${facturas.length === 1 ? '' : 's'} de pago con nuestro estudio:</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+          <thead>
+            <tr style="background:#f9fafb">
+              <th style="padding:8px;text-align:left;color:#6b7280;font-size:12px">Fecha</th>
+              <th style="padding:8px;text-align:left;color:#6b7280;font-size:12px">Concepto</th>
+              <th style="padding:8px;text-align:right;color:#6b7280;font-size:12px">Importe</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" style="padding:12px 8px;font-weight:bold;color:#0f172a;border-top:2px solid #0f172a">Total adeudado</td>
+              <td style="padding:12px 8px;font-weight:bold;color:#dc2626;border-top:2px solid #0f172a;text-align:right;font-size:16px">${fmtMoney(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+        <p style="color:#374151">Por consultas o coordinación de pago, por favor contactanos respondiendo este email.</p>
+        <p style="color:#6b7280;font-size:12px;margin-top:24px;padding-top:16px;border-top:1px solid #e5e7eb">
+          Atentamente,<br/>
+          <b>${estudio?.razonSocial || 'Estudio contable'}</b>
+        </p>
+      </div>
+    </div>`;
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: destinatario,
+    subject: `Recordatorio: honorarios pendientes (${fmtMoney(total)})`,
+    html,
+  });
+}
+
+module.exports = { enviarRecibo, verificarConexion, enviarPasswordReset, enviarAlertaVencimientos, enviarRecordatorioCobro };

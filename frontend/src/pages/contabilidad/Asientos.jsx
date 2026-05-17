@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import api from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/format';
 import toast from 'react-hot-toast';
-import { PlusIcon, PencilIcon, EyeIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, EyeIcon, XMarkIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import Modal from '../../components/Modal';
 import { confirm } from '../../components/confirm';
+import { downloadWithProgress } from '../../utils/download';
 import { useForm, useFieldArray } from 'react-hook-form';
 
 function AsientoForm({ asiento, empresas, defaultEmpresaId, onSave, onCancel }) {
@@ -229,12 +230,34 @@ export default function Asientos() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-2xl font-bold text-gray-900">Asientos Contables</h1>
-        <button onClick={() => { setEditando(null); setShowForm(true); }}
-          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
-          <PlusIcon className="w-4 h-4" /> Nuevo Asiento
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          {empresaId && (
+            <div className="inline-flex items-center gap-1 border rounded-lg bg-white p-1 text-xs">
+              <span className="px-2 text-gray-500">Exportar:</span>
+              {['csv', 'tango', 'bejerman'].map(fmt => (
+                <button
+                  key={fmt}
+                  onClick={() => downloadWithProgress(
+                    `/api/contabilidad/asientos/exportar?empresaId=${empresaId}&formato=${fmt}`,
+                    {
+                      filename: fmt === 'tango' ? 'asientos_tango.zip' : `asientos_${fmt}.csv`,
+                      loadingLabel: `Generando ${fmt.toUpperCase()}...`,
+                    },
+                  )}
+                  className="px-2 py-1 rounded-md hover:bg-gray-100 font-medium text-gray-700 uppercase"
+                >
+                  {fmt}
+                </button>
+              ))}
+            </div>
+          )}
+          <button onClick={() => { setEditando(null); setShowForm(true); }}
+            className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+            <PlusIcon className="w-4 h-4" /> Nuevo Asiento
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border p-4 flex flex-wrap gap-3">

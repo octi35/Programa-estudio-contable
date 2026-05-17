@@ -355,6 +355,20 @@ router.get('/comprobantes/:id', auth, [param('id').isUUID(), validate], async (r
 // Columnas: fecha, tipo_movimiento (COMPRA/VENTA), tipo_comprobante (FACTURA_A/B/C...),
 // pto_venta, numero, cuit_proveedor, razon_social, neto_21, neto_105, neto_27,
 // iva_21, iva_105, iva_27, exento, no_gravado, percep_iva, percep_iibb, retencion, total
+// POST /api/iva/comprobantes/ocr — extrae datos de un PDF/imagen subido.
+// Devuelve campos sugeridos para pre-llenar el formulario. NO persiste nada.
+router.post('/comprobantes/ocr', auth, upload.single('archivo'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+    const { extraerDatosComprobante, PROVIDER } = require('../services/ocrService');
+    const resultado = await extraerDatosComprobante(req.file.buffer, {
+      mimeType: req.file.mimetype,
+      filename: req.file.originalname,
+    });
+    res.json({ provider: PROVIDER, ...resultado });
+  } catch (err) { next(err); }
+});
+
 router.post('/comprobantes/importar', auth, upload.single('archivo'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });

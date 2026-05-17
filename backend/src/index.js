@@ -172,4 +172,28 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(tickCierreAuto, 60 * 60 * 1000);
 }
 
+// ── Cron de automatizaciones diarias (IIBB vencidas + recordatorio cobro) ─
+// Corre a las 9am (después del cron de alertas para no saturar SMTP).
+const { ejecutarAutomatizacionesDiarias } = require('./services/cronAutomatizaciones');
+const HORA_AUTOMATIZACIONES = parseInt(process.env.HORA_AUTOMATIZACIONES || '9', 10);
+let automYaCorrioHoy = false;
+
+async function tickAutomatizaciones() {
+  try {
+    const ahora = new Date();
+    if (ahora.getHours() !== HORA_AUTOMATIZACIONES) { automYaCorrioHoy = false; return; }
+    if (automYaCorrioHoy) return;
+    automYaCorrioHoy = true;
+    const r = await ejecutarAutomatizacionesDiarias();
+    logger.info(`[CronAutomatizaciones] iibb=${JSON.stringify(r.iibbVencidas)} cobros=${JSON.stringify(r.recordatoriosCobro)}`);
+  } catch (err) {
+    logger.error?.(`[CronAutomatizaciones] error: ${err.message}`) || console.error('[CronAutomatizaciones]', err.message);
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(tickAutomatizaciones, 120 * 1000);
+  setInterval(tickAutomatizaciones, 60 * 60 * 1000);
+}
+
 module.exports = app;

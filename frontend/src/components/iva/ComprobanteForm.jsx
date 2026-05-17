@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
 import api from '../../api/client';
 import toast from 'react-hot-toast';
-import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, TrashIcon, CameraIcon } from '@heroicons/react/24/outline';
 
 const TIPOS = [
   'FACTURA_A','FACTURA_B','FACTURA_C',
@@ -90,8 +90,70 @@ export default function ComprobanteForm({ comprobante, empresas, defaultEmpresaI
   const inputClass = 'border rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500';
   const labelClass = 'block text-xs font-medium text-gray-600 mb-1';
 
+  // ── OCR: extrae datos de PDF/imagen y pre-llena el formulario ──────────
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const handleOcr = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setOcrLoading(true);
+    const toastId = toast.loading('Analizando comprobante con OCR...');
+    try {
+      const fd = new FormData();
+      fd.append('archivo', file);
+      const r = await api.post('/iva/comprobantes/ocr', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { datos, requiereManual, provider, confianza, mensaje } = r.data;
+      if (requiereManual) {
+        toast(mensaje || 'OCR no configurado. Cargá manualmente.', { id: toastId, icon: '⚠️' });
+        return;
+      }
+      // Pre-llenar campos detectados
+      const mapeo = {
+        fecha: 'fecha',
+        tipo_comprobante: 'tipoComprobante',
+        pto_venta: 'puntoVenta',
+        numero: 'numero',
+        cuit: '__cuit_proveedor', // se busca en el listado
+        total: 'total',
+        neto_21: 'netoGravado21',
+        neto_105: 'netoGravado105',
+        neto_27: 'netoGravado27',
+        iva_21: 'iva21',
+        iva_105: 'iva105',
+        iva_27: 'iva27',
+      };
+      let setCount = 0;
+      for (const [k, v] of Object.entries(datos)) {
+        const campo = mapeo[k];
+        if (!campo || v == null || v === '') continue;
+        if (campo === '__cuit_proveedor') {
+          const prov = proveedores.find(p => (p.cuit || '').replace(/[-\s]/g, '') === String(v).replace(/[-\s]/g, ''));
+          if (prov) { setValue('proveedorClienteId', prov.id); setCount++; }
+          continue;
+        }
+        setValue(campo, v);
+        setCount++;
+      }
+      toast.success(`OCR (${provider}, confianza ${confianza}) · ${setCount} campos pre-llenados`, { id: toastId, duration: 5000 });
+    } catch (_) {
+      toast.dismiss(toastId);
+    } finally { setOcrLoading(false); }
+  };
+
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      {/* Subida con OCR */}
+      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-center justify-between gap-3">
+        <div className="text-xs text-purple-800">
+          <p className="font-semibold flex items-center gap-1"><CameraIcon className="w-4 h-4" /> Carga rápida con OCR</p>
+          <p className="text-purple-700">Subí el PDF o foto del comprobante y completamos los datos automáticamente.</p>
+        </div>
+        <label className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 cursor-pointer whitespace-nowrap">
+          {ocrLoading ? 'Procesando...' : 'Subir archivo'}
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleOcr} disabled={ocrLoading} className="hidden" />
+        </label>
+      </div>
+
       {/* Encabezado */}
       <div className="grid grid-cols-2 gap-4">
         <div>

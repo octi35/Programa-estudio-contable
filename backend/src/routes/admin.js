@@ -57,4 +57,13 @@ router.post('/cierre-automatico/ejecutar', auth, requireRol('ADMIN'), async (req
   } catch (err) { next(err); }
 });
 
+// POST /api/admin/automatizaciones/ejecutar — dispara IIBB-vencidas + recordatorios manualmente
+router.post('/automatizaciones/ejecutar', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const { ejecutarAutomatizacionesDiarias } = require('../services/cronAutomatizaciones');
+    const resultado = await ejecutarAutomatizacionesDiarias();
+    res.json(resultado);
+  } catch (err) { next(err); }
+});
+
 module.exports = router;
