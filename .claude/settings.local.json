@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(try { \\(Get-Command claude -ErrorAction Stop\\).Source } catch { \"claude: no encontrado\" }; try { node --version } catch { \"node: no encontrado\" }; try { npm --version } catch { \"npm: no encontrado\" })",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell(winget --version)",
+      "PowerShell(winget install OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); npm install -g @anthropic-ai/claude-code)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); claude --version)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); npm bin -g)",
+      "PowerShell($env:Path = [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"Path\",\"User\"\\); npm prefix -g)",
+      "Bash(cmd /c \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Roaming\\\\npm\\\\claude.cmd\" --version)",
+      "PowerShell(& \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Roaming\\\\npm\\\\claude.cmd\" --version)",
+      "PowerShell($env:Path += \";C:\\\\Users\\\\Usuario\\\\AppData\\\\Roaming\\\\npm\"; claude --version)",
+      "PowerShell(Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force)",
+      "PowerShell($PROFILE)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3001/\" -UseBasicParsing; \"HTTP $\\($r.StatusCode\\)\" } catch { \"Error: $\\($_.Exception.Message\\)\" })"
+    ]
+  }
+}

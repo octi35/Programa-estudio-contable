@@ -1,0 +1,1242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USUARIOS DEL SISTEMA ────────────────────────────────────────────────────
+
+model Usuario {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  nombre    String
+  rol       RolUsuario @default(CONTADOR)
+  activo    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  estudio   Estudio? @relation(fields: [estudioId], references: [id])
+  estudioId String?
+
+  @@map("usuarios")
+}
+
+enum RolUsuario {
+  ADMIN
+  CONTADOR
+  OPERADOR
+}
+
+// ─── ESTUDIO CONTABLE ─────────────────────────────────────────────────────────
+
+model Estudio {
+  id               String   @id @default(uuid())
+  razonSocial      String
+  cuit             String   @unique
+  matricula        String?
+  direccion        String?
+  telefono         String?
+  email            String?
+  logo             String?
+  // AFIP Facturación Electrónica
+  afipAmbiente     String?  @default("SIMULADO")
+  afipPtoVta       Int?     @default(1)
+  afipCertificado  String?
+  afipClavePrivada String?
+  // Webhook bancario: secreto HMAC para validar payloads entrantes
+  webhookSecret    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  usuarios              Usuario[]
+  empresas              Empresa[]
+  parametrosFiscales    ParametroFiscal[]
+  comprobantesElect     ComprobanteElectronico[]
+  categoriasMonotributo MonotributoCategoria[]
+
+  @@map("estudios")
+}
+
+// ─── CONVENIOS COLECTIVOS ─────────────────────────────────────────────────────
+
+model Convenio {
+  id             String   @id @default(uuid())
+  codigo         String   @unique
+  nombre         String
+  descripcion    String?
+  horasSemanales Int      @default(40)
+  activo         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  empresas           Empresa[]
+  empleados          Empleado[]
+  conceptos          Concepto[]
+  tablasSueldo       TablaSueldo[]
+  acuerdosSalariales AcuerdoSalarial[]
+
+  @@map("convenios")
+}
+
+// ─── TABLA DE SUELDOS BÁSICOS ─────────────────────────────────────────────────
+
+model TablaSueldo {
+  id            String    @id @default(uuid())
+  convenioId    String
+  categoria     String
+  descripcion   String?
+  basicoMensual Decimal   @db.Decimal(12, 2)
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  convenio Convenio @relation(fields: [convenioId], references: [id])
+
+  @@map("tablas_sueldo")
+}
+
+// ─── ACUERDOS PARITARIOS ─────────────────────────────────────────────────────
+
+model AcuerdoSalarial {
+  id            String       @id @default(uuid())
+  convenioId    String?
+  descripcion   String
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime?
+  tipo          TipoConcepto
+  monto         Decimal?     @db.Decimal(12, 2)
+  porcentaje    Decimal?     @db.Decimal(8, 4)
+  absorbible    Boolean      @default(true)
+  absorbido     Boolean      @default(false)
+  cuota         Int?
+  totalCuotas   Int?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  convenio Convenio? @relation(fields: [convenioId], references: [id])
+
+  @@index([convenioId, vigenciaDesde])
+  @@index([vigenciaDesde, absorbido])
+  @@map("acuerdos_salariales")
+}
+
+// ─── EMPRESAS (CLIENTES DEL ESTUDIO) ─────────────────────────────────────────
+
+model Empresa {
+  id                 String    @id @default(uuid())
+  razonSocial        String
+  nombreFantasia     String?
+  cuit               String    @unique
+  domicilio          String?
+  localidad          String?
+  provincia          String?
+  codigoPostal       String?
+  telefono           String?
+  email              String?
+  web                String?
+  actividadPrincipal String?
+  logo               String?
+  reciboColor        String?
+  reciboLayout       String?   @default("CLASICO")
+  reciboMostrarQR    Boolean   @default(true)
+  reciboMostrarDuplicado Boolean @default(true)
+  reciboFirma        String?
+  convenioId         String?
+  estudioId          String
+  activa             Boolean   @default(true)
+  fechaInicio        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  convenio            Convenio?                @relation(fields: [convenioId], references: [id])
+  estudio             Estudio                  @relation(fields: [estudioId], references: [id])
+  empleados           Empleado[]
+  sucursales          Sucursal[]
+  periodos            PeriodoLiquidacion[]
+  documentos          Documento[]
+  proveedoresClientes ProveedorCliente[]
+  comprobantesIVA     ComprobanteIVA[]
+  cuentasContables    CuentaContable[]
+  ejercicios          EjercicioContable[]
+  asientos            Asiento[]
+  declaracionesIIBB   DeclaracionIIBB[]
+  cuentasBancarias    CuentaBancaria[]
+  monotributo         MonotributoCliente?
+  presupuestos        Presupuesto[]
+  comprobantesElect   ComprobanteElectronico[]
+  coeficientesCM      CoeficienteCM[]
+  notificacionesAfip  NotificacionAfip[]
+
+  @@map("empresas")
+}
+
+// ─── EMPLEADOS (LEGAJOS) ─────────────────────────────────────────────────────
+
+model Empleado {
+  id                String            @id @default(uuid())
+  empresaId         String
+  sucursalId        String?
+  convenioId        String?
+  legajoNumero      String?
+  apellido          String
+  nombre            String
+  cuil              String
+  dni               String?
+  fechaNacimiento   DateTime?
+  nacionalidad      String?
+  sexo              String?
+  estadoCivil       String?
+  domicilio         String?
+  localidad         String?
+  provincia         String?
+  codigoPostal      String?
+  telefono          String?
+  email             String?
+  cbu               String?
+  banco             String?
+  fechaIngreso      DateTime
+  fechaEgreso       DateTime?
+  motivoEgreso      MotivoEgreso?
+  categoria         String?
+  puesto            String?
+  modalidadContrato ModalidadContrato @default(TIEMPO_INDETERMINADO)
+  jornadaTrabajo    TipoJornada       @default(COMPLETA)
+  horasSemanales    Decimal?          @db.Decimal(5, 2)
+  basicoMensual     Decimal           @default(0) @db.Decimal(12, 2)
+  obraSocialCodigo  String?
+  obraSocialNombre  String?
+  sindicatoCodigo   String?
+  afiliado          Boolean           @default(true)
+  activo            Boolean           @default(true)
+  orden             Int               @default(0)
+  observaciones     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  empresa       Empresa             @relation(fields: [empresaId], references: [id])
+  sucursal      Sucursal?           @relation(fields: [sucursalId], references: [id])
+  convenio      Convenio?           @relation(fields: [convenioId], references: [id])
+  liquidaciones Liquidacion[]
+  documentos    Documento[]
+  novedades         NovedadEmpleado[]
+  familiares        Familiar[]
+  ausentismos       Ausentismo[]
+  ganancias         GananciasEmpleado[]
+  conceptosAsignados ConceptoEmpleado[]
+
+  @@unique([empresaId, cuil])
+  @@index([cuil])
+  @@index([empresaId, activo])
+  @@index([apellido, nombre])
+  @@index([legajoNumero])
+  @@map("empleados")
+}
+
+enum ModalidadContrato {
+  TIEMPO_INDETERMINADO
+  PLAZO_FIJO
+  EVENTUAL
+  PASANTIA
+  APRENDIZAJE
+}
+
+enum TipoJornada {
+  COMPLETA
+  PART_TIME
+  TIEMPO_PARCIAL
+}
+
+enum MotivoEgreso {
+  RENUNCIA
+  DESPIDO_SIN_CAUSA
+  DESPIDO_CON_CAUSA
+  MUTUO_ACUERDO
+  JUBILACION
+  FALLECIMIENTO
+  VENCIMIENTO_CONTRATO
+}
+
+// ─── NOVEDADES DE EMPLEADOS ───────────────────────────────────────────────────
+
+model NovedadEmpleado {
+  id          String      @id @default(uuid())
+  empleadoId  String
+  tipo        TipoNovedad
+  descripcion String
+  fechaDesde  DateTime
+  fechaHasta  DateTime?
+  valor       Decimal?    @db.Decimal(12, 2)
+  documentoId String?
+  createdAt   DateTime    @default(now())
+
+  empleado  Empleado   @relation(fields: [empleadoId], references: [id])
+  documento Documento? @relation(fields: [documentoId], references: [id])
+
+  @@index([empleadoId, fechaDesde])
+  @@index([tipo])
+  @@map("novedades_empleados")
+}
+
+enum TipoNovedad {
+  ALTA
+  BAJA
+  MODIFICACION_SUELDO
+  CAMBIO_CATEGORIA
+  LICENCIA
+  VACACIONES
+  SUSPENSION
+  EMBARGO
+  HORA_EXTRA
+  ADELANTO_SUELDO
+  SEGURO_VIDA
+  SEPELIO
+  CREDITO_HIPOTECARIO
+  OBRA_SOCIAL_PREPAGA
+  DONACION
+  DIAS_TRABAJADOS
+  DIAS_NO_REMUNERATIVOS
+  PERSONALIZADA
+}
+
+// ─── CONCEPTOS DE LIQUIDACIÓN ─────────────────────────────────────────────────
+
+model Concepto {
+  id           String             @id @default(uuid())
+  convenioId   String?
+  codigo       String
+  nombre       String
+  descripcion  String?
+  tipo         TipoConcepto
+  naturaleza   NaturalezaConcepto
+  unidad       UnidadConcepto     @default(IMPORTE)
+  formula      String?
+  porcentaje   Decimal?           @db.Decimal(8, 4)
+  importe      Decimal?           @db.Decimal(12, 2)
+  imprimible   Boolean            @default(true)
+  esAuxiliar   Boolean            @default(false)
+  remunerativo Boolean            @default(true)
+  orden        Int                @default(0)
+  activo       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  convenio          Convenio?            @relation(fields: [convenioId], references: [id])
+  detalles          DetalleLiquidacion[]
+  conceptosEmpleado ConceptoEmpleado[]
+
+  @@unique([convenioId, codigo])
+  @@map("conceptos")
+}
+
+// ─── CONCEPTOS ASIGNADOS A EMPLEADOS ─────────────────────────────────────────
+
+model ConceptoEmpleado {
+  id            String    @id @default(uuid())
+  empleadoId    String
+  conceptoId    String
+  valor         Decimal?  @db.Decimal(12, 2)
+  vigenciaDesde DateTime
+  vigenciaHasta DateTime?
+  activo        Boolean   @default(true)
+  observaciones String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+  concepto Concepto @relation(fields: [conceptoId], references: [id])
+
+  @@index([empleadoId, activo])
+  @@map("conceptos_empleados")
+}
+
+enum TipoConcepto {
+  REMUNERATIVO
+  NO_REMUNERATIVO
+  DEDUCCION
+  APORTE_EMPLEADOR
+}
+
+enum NaturalezaConcepto {
+  HABER
+  DESCUENTO
+  INFORMATIVO
+}
+
+enum UnidadConcepto {
+  IMPORTE
+  PORCENTAJE
+  HORAS
+  DIAS
+  CANTIDAD
+}
+
+// ─── PERÍODOS DE LIQUIDACIÓN ──────────────────────────────────────────────────
+
+model PeriodoLiquidacion {
+  id            String          @id @default(uuid())
+  empresaId     String
+  anio          Int
+  mes           Int
+  tipo          TipoLiquidacion @default(MENSUAL)
+  estado        EstadoPeriodo   @default(ABIERTO)
+  fechaCierre   DateTime?
+  observaciones String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  empresa       Empresa       @relation(fields: [empresaId], references: [id])
+  liquidaciones Liquidacion[]
+
+  @@unique([empresaId, anio, mes, tipo])
+  @@map("periodos_liquidacion")
+}
+
+enum TipoLiquidacion {
+  MENSUAL
+  SAC_JUNIO
+  SAC_DICIEMBRE
+  VACACIONES
+  LIQUIDACION_FINAL
+  COMPLEMENTO
+  RETROACTIVO
+}
+
+enum EstadoPeriodo {
+  ABIERTO
+  PROCESADO
+  CERRADO
+}
+
+// ─── LIQUIDACIONES (CABECERA) ─────────────────────────────────────────────────
+
+model Liquidacion {
+  id                  String            @id @default(uuid())
+  periodoId           String
+  empleadoId          String
+  anio                Int
+  mes                 Int
+  tipo                TipoLiquidacion
+  diasTrabajados      Decimal           @default(0) @db.Decimal(5, 2)
+  diasNoTrabajados    Decimal           @default(0) @db.Decimal(5, 2)
+  horasTrabajadas     Decimal           @default(0) @db.Decimal(7, 2)
+  totalHaberes        Decimal           @default(0) @db.Decimal(12, 2)
+  totalDescuentos     Decimal           @default(0) @db.Decimal(12, 2)
+  totalNeto           Decimal           @default(0) @db.Decimal(12, 2)
+  totalContribuciones Decimal           @default(0) @db.Decimal(12, 2)
+  estado              EstadoLiquidacion @default(BORRADOR)
+  observaciones       String?
+  reciboPdfUrl        String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  periodo  PeriodoLiquidacion   @relation(fields: [periodoId], references: [id])
+  empleado Empleado             @relation(fields: [empleadoId], references: [id])
+  detalles DetalleLiquidacion[]
+
+  @@unique([periodoId, empleadoId])
+  @@index([anio, mes])
+  @@index([estado])
+  @@index([empleadoId, anio, mes])
+  @@index([periodoId, estado])
+  @@map("liquidaciones")
+}
+
+enum EstadoLiquidacion {
+  BORRADOR
+  CALCULADO
+  CONFIRMADO
+  ANULADO
+}
+
+// ─── DETALLE DE LIQUIDACIÓN ───────────────────────────────────────────────────
+
+model DetalleLiquidacion {
+  id            String             @id @default(uuid())
+  liquidacionId String
+  conceptoId    String
+  descripcion   String
+  cantidad      Decimal?           @db.Decimal(10, 4)
+  valorUnitario Decimal?           @db.Decimal(12, 2)
+  importe       Decimal            @db.Decimal(12, 2)
+  naturaleza    NaturalezaConcepto
+  tipo          TipoConcepto
+  remunerativo  Boolean            @default(true)
+  orden         Int                @default(0)
+  createdAt     DateTime           @default(now())
+
+  liquidacion Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Cascade)
+  concepto    Concepto    @relation(fields: [conceptoId], references: [id])
+
+  @@map("detalle_liquidaciones")
+}
+
+// ─── FAMILIARES A CARGO ───────────────────────────────────────────────────────
+
+model Familiar {
+  id              String             @id @default(uuid())
+  empleadoId      String
+  nombre          String
+  apellido        String
+  parentesco      ParentescoFamiliar
+  cuil            String?
+  fechaNacimiento DateTime?
+  discapacitado   Boolean            @default(false)
+  activo          Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@map("familiares")
+}
+
+enum ParentescoFamiliar {
+  CONYUGE
+  HIJO
+  HIJA
+  PADRE
+  MADRE
+  OTRO
+}
+
+// ─── AUSENTISMOS ─────────────────────────────────────────────────────────────
+
+model Ausentismo {
+  id          String       @id @default(uuid())
+  empleadoId  String
+  tipo        TipoAusencia
+  descripcion String?
+  fechaDesde  DateTime
+  fechaHasta  DateTime?
+  dias        Int?
+  justificado Boolean      @default(true)
+  certificado String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@index([empleadoId, fechaDesde])
+  @@map("ausentismos")
+}
+
+enum TipoAusencia {
+  ENFERMEDAD_INCULPABLE
+  ACCIDENTE_TRABAJO
+  LICENCIA_ORDINARIA
+  LICENCIA_ESPECIAL
+  FALTA_INJUSTIFICADA
+  LICENCIA_MATERNIDAD
+  LICENCIA_PATERNIDAD
+  DUELO
+  SUSPENSION_DISCIPLINARIA
+  OTRO
+}
+
+// ─── SUCURSALES DE EMPRESA ────────────────────────────────────────────────────
+
+model Sucursal {
+  id           String   @id @default(uuid())
+  empresaId    String
+  nombre       String
+  codigo       String?
+  domicilio    String?
+  localidad    String?
+  provincia    String?
+  codigoPostal String?
+  telefono     String?
+  activa       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  empleados Empleado[]
+
+  @@map("sucursales")
+}
+
+// ─── PARÁMETROS FISCALES ──────────────────────────────────────────────────────
+
+model ParametroFiscal {
+  id            String   @id @default(uuid())
+  estudioId     String
+  clave         String
+  valor         String
+  descripcion   String?
+  vigenciaDesde DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  estudio Estudio @relation(fields: [estudioId], references: [id])
+
+  @@unique([estudioId, clave, vigenciaDesde])
+  @@map("parametros_fiscales")
+}
+
+// ─── LOG DE ACCIONES ──────────────────────────────────────────────────────────
+
+model LogAccion {
+  id        String   @id @default(uuid())
+  usuarioId String?
+  estudioId String?
+  accion    String
+  entidad   String?
+  entidadId String?
+  detalle   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([estudioId, createdAt])
+  @@index([entidad, entidadId])
+  @@index([usuarioId, createdAt])
+  @@index([accion])
+  @@map("log_acciones")
+}
+
+// ─── PROVEEDORES / CLIENTES (IVA) ─────────────────────────────────────────────
+
+model ProveedorCliente {
+  id           String       @id @default(uuid())
+  empresaId    String
+  tipo         TipoPersona  @default(PROVEEDOR)
+  razonSocial  String
+  cuit         String?
+  condicionIVA CondicionIVA @default(RESPONSABLE_INSCRIPTO)
+  domicilio    String?
+  localidad    String?
+  provincia    String?
+  telefono     String?
+  email        String?
+  activo       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  empresa      Empresa          @relation(fields: [empresaId], references: [id])
+  comprobantes ComprobanteIVA[]
+
+  @@map("proveedores_clientes")
+}
+
+enum TipoPersona {
+  PROVEEDOR
+  CLIENTE
+  AMBOS
+}
+
+enum CondicionIVA {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTISTA
+  EXENTO
+  CONSUMIDOR_FINAL
+  NO_RESPONSABLE
+}
+
+// ─── COMPROBANTES IVA ─────────────────────────────────────────────────────────
+
+model ComprobanteIVA {
+  id                 String             @id @default(uuid())
+  empresaId          String
+  proveedorClienteId String?
+  tipoMovimiento     TipoMovimientoIVA
+  tipoComprobante    TipoComprobanteIVA
+  puntoVenta         Int
+  numero             Int
+  numeroHasta        Int?
+  fecha              DateTime
+  periodoFiscalAnio  Int
+  periodoFiscalMes   Int
+  netoGravado21      Decimal            @default(0) @db.Decimal(14, 2)
+  netoGravado105     Decimal            @default(0) @db.Decimal(14, 2)
+  netoGravado27      Decimal            @default(0) @db.Decimal(14, 2)
+  netoNoGravado      Decimal            @default(0) @db.Decimal(14, 2)
+  exento             Decimal            @default(0) @db.Decimal(14, 2)
+  iva21              Decimal            @default(0) @db.Decimal(14, 2)
+  iva105             Decimal            @default(0) @db.Decimal(14, 2)
+  iva27              Decimal            @default(0) @db.Decimal(14, 2)
+  percepcionIVA      Decimal            @default(0) @db.Decimal(14, 2)
+  percepcionIIBB     Decimal            @default(0) @db.Decimal(14, 2)
+  retencion          Decimal            @default(0) @db.Decimal(14, 2)
+  total              Decimal            @default(0) @db.Decimal(14, 2)
+  observaciones      String?
+  anulado            Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  empresa          Empresa              @relation(fields: [empresaId], references: [id])
+  proveedorCliente ProveedorCliente?    @relation(fields: [proveedorClienteId], references: [id])
+  items            ItemComprobanteIVA[]
+  pagos            PagoComprobante[]
+
+  @@index([fecha])
+  @@index([empresaId, periodoFiscalAnio, periodoFiscalMes])
+  @@index([empresaId, tipoMovimiento, fecha])
+  @@index([proveedorClienteId])
+  @@map("comprobantes_iva")
+}
+
+enum TipoMovimientoIVA {
+  COMPRA
+  VENTA
+}
+
+enum TipoComprobanteIVA {
+  FACTURA_A
+  FACTURA_B
+  FACTURA_C
+  NOTA_CREDITO_A
+  NOTA_CREDITO_B
+  NOTA_CREDITO_C
+  NOTA_DEBITO_A
+  NOTA_DEBITO_B
+  NOTA_DEBITO_C
+  RECIBO_A
+  RECIBO_B
+  RECIBO_C
+  LIQUIDACION_A
+  LIQUIDACION_B
+}
+
+model ItemComprobanteIVA {
+  id               String   @id @default(uuid())
+  comprobanteId    String
+  descripcion      String
+  cantidad         Decimal  @default(1) @db.Decimal(10, 4)
+  precioUnitario   Decimal  @default(0) @db.Decimal(14, 2)
+  alicuotaIVA      Decimal  @default(21) @db.Decimal(5, 2)
+  importe          Decimal  @db.Decimal(14, 2)
+  cuentaContableId String?
+  orden            Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  comprobante    ComprobanteIVA  @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  cuentaContable CuentaContable? @relation(fields: [cuentaContableId], references: [id])
+
+  @@map("items_comprobantes_iva")
+}
+
+// ─── PLAN DE CUENTAS ──────────────────────────────────────────────────────────
+
+model CuentaContable {
+  id                 String           @id @default(uuid())
+  empresaId          String
+  codigo             String
+  nombre             String
+  tipo               TipoCuenta
+  naturaleza         NaturalezaCuenta
+  nivel              Int              @default(1)
+  cuentaPadreId      String?
+  permiteMovimientos Boolean          @default(true)
+  activa             Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  empresa          Empresa              @relation(fields: [empresaId], references: [id])
+  cuentaPadre      CuentaContable?      @relation("JerarquiaCuentas", fields: [cuentaPadreId], references: [id])
+  subcuentas       CuentaContable[]     @relation("JerarquiaCuentas")
+  lineasAsiento    LineaAsiento[]
+  itemsIVA         ItemComprobanteIVA[]
+  itemsPresupuesto ItemPresupuesto[]
+
+  @@unique([empresaId, codigo])
+  @@map("cuentas_contables")
+}
+
+enum TipoCuenta {
+  ACTIVO
+  PASIVO
+  PATRIMONIO_NETO
+  RESULTADO_POSITIVO
+  RESULTADO_NEGATIVO
+}
+
+enum NaturalezaCuenta {
+  DEUDORA
+  ACREEDORA
+}
+
+// ─── EJERCICIOS CONTABLES ─────────────────────────────────────────────────────
+
+model EjercicioContable {
+  id          String          @id @default(uuid())
+  empresaId   String
+  nombre      String
+  fechaInicio DateTime
+  fechaCierre DateTime?
+  estado      EstadoEjercicio @default(ABIERTO)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  empresa  Empresa   @relation(fields: [empresaId], references: [id])
+  asientos Asiento[]
+
+  @@map("ejercicios_contables")
+}
+
+enum EstadoEjercicio {
+  ABIERTO
+  CERRADO
+}
+
+// ─── ASIENTOS CONTABLES ───────────────────────────────────────────────────────
+
+model Asiento {
+  id          String        @id @default(uuid())
+  ejercicioId String
+  empresaId   String
+  fecha       DateTime
+  numero      Int?
+  descripcion String
+  glosa       String?
+  origen      OrigenAsiento @default(MANUAL)
+  origenId    String?
+  totalDebe   Decimal       @default(0) @db.Decimal(14, 2)
+  totalHaber  Decimal       @default(0) @db.Decimal(14, 2)
+  anulado     Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  ejercicio EjercicioContable @relation(fields: [ejercicioId], references: [id])
+  empresa   Empresa           @relation(fields: [empresaId], references: [id])
+  lineas    LineaAsiento[]
+
+  @@index([fecha])
+  @@index([empresaId, fecha])
+  @@index([ejercicioId, fecha])
+  @@index([anulado])
+  @@map("asientos")
+}
+
+enum OrigenAsiento {
+  MANUAL
+  IVA_COMPRAS
+  IVA_VENTAS
+  SUELDOS
+  APERTURA
+  CIERRE
+}
+
+model LineaAsiento {
+  id               String   @id @default(uuid())
+  asientoId        String
+  cuentaContableId String
+  descripcion      String?
+  debe             Decimal  @default(0) @db.Decimal(14, 2)
+  haber            Decimal  @default(0) @db.Decimal(14, 2)
+  orden            Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  asiento        Asiento        @relation(fields: [asientoId], references: [id], onDelete: Cascade)
+  cuentaContable CuentaContable @relation(fields: [cuentaContableId], references: [id])
+
+  @@index([cuentaContableId])
+  @@index([asientoId])
+  @@map("lineas_asiento")
+}
+
+// ─── DOCUMENTOS ADJUNTOS ──────────────────────────────────────────────────────
+
+model Documento {
+  id          String        @id @default(uuid())
+  empresaId   String?
+  empleadoId  String?
+  tipo        TipoDocumento
+  nombre      String
+  descripcion String?
+  url         String
+  mimeType    String?
+  tamanio     Int?
+  anio        Int?
+  mes         Int?
+  createdAt   DateTime      @default(now())
+
+  empresa   Empresa?          @relation(fields: [empresaId], references: [id])
+  empleado  Empleado?         @relation(fields: [empleadoId], references: [id])
+  novedades NovedadEmpleado[]
+
+  @@index([empresaId, tipo])
+  @@index([empresaId, anio, mes])
+  @@index([empleadoId])
+  @@map("documentos")
+}
+
+enum TipoDocumento {
+  RECIBO_SUELDO
+  LSD
+  F931
+  ALTA_EMPLEADO
+  BAJA_EMPLEADO
+  CONTRATO
+  DNI
+  CUIL
+  CERTIFICADO_TRABAJO
+  ART80_LCT
+  LIBRO_IVA
+  DECLARACION_IVA
+  OTRO
+}
+
+// ─── GANANCIAS 4ª CATEGORÍA ───────────────────────────────────────────────────
+
+model GananciasEmpleado {
+  id                  String   @id @default(uuid())
+  empleadoId          String
+  anio                Int
+  conyuge             Boolean  @default(false)
+  hijos               Int      @default(0)
+  hijosDiscapacitados Int      @default(0)
+  alquiler            Decimal? @db.Decimal(12, 2)
+  hipoteca            Decimal? @db.Decimal(12, 2)
+  medicinaPrivada     Decimal? @db.Decimal(12, 2)
+  sepelio             Decimal? @db.Decimal(12, 2)
+  donaciones          Decimal? @db.Decimal(12, 2)
+  otrasDeducciones    Decimal? @db.Decimal(12, 2)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Cascade)
+
+  @@unique([empleadoId, anio])
+  @@map("ganancias_empleados")
+}
+
+// ─── IIBB ─────────────────────────────────────────────────────────────────────
+
+model DeclaracionIIBB {
+  id                String            @id @default(uuid())
+  empresaId         String
+  anio              Int
+  mes               Int
+  jurisdiccion      String
+  regimen           String            @default("DIRECTO")
+  baseImponible     Decimal           @default(0) @db.Decimal(14, 2)
+  alicuota          Decimal           @default(0) @db.Decimal(6, 4)
+  impuesto          Decimal           @default(0) @db.Decimal(14, 2)
+  retenciones       Decimal           @default(0) @db.Decimal(14, 2)
+  percepciones      Decimal           @default(0) @db.Decimal(14, 2)
+  saldo             Decimal           @default(0) @db.Decimal(14, 2)
+  estado            EstadoDeclaracion @default(BORRADOR)
+  fechaVencimiento  DateTime?
+  fechaPresentacion DateTime?
+  observaciones     String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, anio, mes, jurisdiccion])
+  @@index([empresaId, anio, mes])
+  @@index([estado])
+  @@map("declaraciones_iibb")
+}
+
+model CoeficienteCM {
+  id           String   @id @default(uuid())
+  empresaId    String
+  anio         Int
+  jurisdiccion String
+  coeficiente  Decimal  @db.Decimal(8, 6)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@unique([empresaId, anio, jurisdiccion])
+  @@index([empresaId, anio])
+  @@map("coeficientes_cm")
+}
+
+enum EstadoDeclaracion {
+  BORRADOR
+  PRESENTADA
+  PAGADA
+  VENCIDA
+}
+
+// ─── PAGOS DE COMPROBANTES IVA ────────────────────────────────────────────────
+
+model PagoComprobante {
+  id            String   @id @default(uuid())
+  comprobanteId String
+  fecha         DateTime
+  importe       Decimal  @db.Decimal(14, 2)
+  medioPago     String?
+  referencia    String?
+  observaciones String?
+  createdAt     DateTime @default(now())
+
+  comprobante ComprobanteIVA @relation(fields: [comprobanteId], references: [id])
+
+  @@index([comprobanteId])
+  @@index([fecha])
+  @@map("pagos_comprobantes")
+}
+
+// ─── CUENTAS BANCARIAS ────────────────────────────────────────────────────────
+
+model CuentaBancaria {
+  id           String             @id @default(uuid())
+  empresaId    String
+  banco        String
+  sucursal     String?
+  tipoCuenta   TipoCuentaBancaria @default(CUENTA_CORRIENTE)
+  numeroCuenta String
+  cbu          String?
+  alias        String?
+  moneda       String             @default("ARS")
+  saldoInicial Decimal            @default(0) @db.Decimal(14, 2)
+  activa       Boolean            @default(true)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  empresa     Empresa              @relation(fields: [empresaId], references: [id])
+  movimientos MovimientoBancario[]
+
+  @@map("cuentas_bancarias")
+}
+
+enum TipoCuentaBancaria {
+  CUENTA_CORRIENTE
+  CAJA_AHORRO
+  PLAZO_FIJO
+}
+
+model MovimientoBancario {
+  id               String   @id @default(uuid())
+  cuentaBancariaId String
+  fecha            DateTime
+  descripcion      String
+  referencia       String?
+  debe             Decimal  @default(0) @db.Decimal(14, 2)
+  haber            Decimal  @default(0) @db.Decimal(14, 2)
+  saldo            Decimal  @default(0) @db.Decimal(14, 2)
+  conciliado       Boolean  @default(false)
+  asientoId        String?
+  createdAt        DateTime @default(now())
+
+  cuentaBancaria CuentaBancaria @relation(fields: [cuentaBancariaId], references: [id], onDelete: Cascade)
+
+  @@index([cuentaBancariaId, fecha])
+  @@index([asientoId])
+  @@index([conciliado])
+  @@map("movimientos_bancarios")
+}
+
+// ─── TIPOS DE CAMBIO ──────────────────────────────────────────────────────────
+
+model TipoCambio {
+  id        String   @id @default(uuid())
+  estudioId String
+  moneda    String
+  fecha     DateTime
+  tipo      String   @default("OFICIAL")
+  compra    Decimal  @db.Decimal(10, 4)
+  venta     Decimal  @db.Decimal(10, 4)
+  createdAt DateTime @default(now())
+
+  @@unique([estudioId, moneda, fecha, tipo])
+  @@index([estudioId, fecha])
+  @@map("tipos_cambio")
+}
+
+// ─── HONORARIOS DEL ESTUDIO ───────────────────────────────────────────────────
+
+model HonorarioCliente {
+  id           String   @id @default(uuid())
+  estudioId    String
+  empresaId    String
+  descripcion  String
+  periodicidad String   @default("MENSUAL")
+  importe      Decimal  @db.Decimal(12, 2)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("honorarios_clientes")
+}
+
+model FacturaHonorarios {
+  id            String                  @id @default(uuid())
+  estudioId     String
+  empresaId     String
+  numero        String?
+  fecha         DateTime
+  anio          Int
+  mes           Int
+  concepto      String
+  subtotal      Decimal                 @default(0) @db.Decimal(12, 2)
+  iva           Decimal                 @default(0) @db.Decimal(12, 2)
+  total         Decimal                 @default(0) @db.Decimal(12, 2)
+  estado        EstadoFacturaHonorarios @default(PENDIENTE)
+  fechaCobro    DateTime?
+  observaciones String?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@map("facturas_honorarios")
+}
+
+enum EstadoFacturaHonorarios {
+  PENDIENTE
+  ENVIADA
+  COBRADA
+  ANULADA
+}
+
+// ─── MONOTRIBUTO ──────────────────────────────────────────────────────────────
+
+// Notificaciones del Buzón E-Ventanilla AFIP por empresa.
+// Se sincronizan periódicamente vía cron desde el WS de AFIP.
+model NotificacionAfip {
+  id            String   @id @default(uuid())
+  empresaId     String
+  // ID original del mensaje en AFIP — clave de idempotencia
+  mensajeIdAfip String?
+  asunto        String
+  cuerpo        String?  @db.Text
+  origen        String?  // Servicio AFIP que emitió (DGI, ARBA, etc.)
+  prioridad     String   @default("NORMAL") // CRITICA, ALTA, NORMAL, BAJA
+  categoria     String?  // INTIMACION, REQUERIMIENTO, INFORMATIVA, etc.
+  fechaAfip     DateTime
+  leida         Boolean  @default(false)
+  archivada     Boolean  @default(false)
+  urlOriginal   String?
+  raw           Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  @@unique([empresaId, mensajeIdAfip])
+  @@index([empresaId, leida])
+  @@index([empresaId, fechaAfip])
+  @@index([prioridad])
+  @@map("notificaciones_afip")
+}
+
+// Tabla configurable de categorías de Monotributo (vigencias por estudio).
+// Reemplaza al array hardcodeado CATEGORIAS_2024.
+model MonotributoCategoria {
+  id              String   @id @default(uuid())
+  estudioId       String
+  categoria       String
+  vigenciaDesde   DateTime
+  limiteIngresos  Decimal  @db.Decimal(14, 2)
+  cuotaImpuesto   Decimal  @default(0) @db.Decimal(12, 2)
+  cuotaObraSocial Decimal  @default(0) @db.Decimal(12, 2)
+  cuotaJubilacion Decimal  @default(0) @db.Decimal(12, 2)
+  total           Decimal  @default(0) @db.Decimal(12, 2)
+  observaciones   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  estudio Estudio @relation(fields: [estudioId], references: [id])
+
+  @@unique([estudioId, categoria, vigenciaDesde])
+  @@index([estudioId, vigenciaDesde])
+  @@map("monotributo_categorias")
+}
+
+model MonotributoCliente {
+  id                    String    @id @default(uuid())
+  empresaId             String    @unique
+  categoriaActual       String
+  fechaUltimaCategoria  DateTime?
+  ingresosBrutosMensual Decimal?  @db.Decimal(12, 2)
+  cuotaMensual          Decimal?  @db.Decimal(12, 2)
+  vencimientoCuota      Int       @default(20)
+  activo                Boolean   @default(true)
+  observaciones         String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id])
+
+  @@map("monotributo_clientes")
+}
+
+// ─── PRESUPUESTO CONTABLE ─────────────────────────────────────────────────────
+
+model Presupuesto {
+  id        String   @id @default(uuid())
+  empresaId String
+  anio      Int
+  nombre    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa Empresa           @relation(fields: [empresaId], references: [id])
+  items   ItemPresupuesto[]
+
+  @@unique([empresaId, anio])
+  @@map("presupuestos")
+}
+
+model ItemPresupuesto {
+  id               String   @id @default(uuid())
+  presupuestoId    String
+  cuentaContableId String
+  mes              Int
+  importe          Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  presupuesto    Presupuesto    @relation(fields: [presupuestoId], references: [id], onDelete: Cascade)
+  cuentaContable CuentaContable @relation(fields: [cuentaContableId], references: [id])
+
+  @@unique([presupuestoId, cuentaContableId, mes])
+  @@map("items_presupuesto")
+}
+
+// ─── FACTURACIÓN ELECTRÓNICA AFIP ────────────────────────────────────────────
+
+model ComprobanteElectronico {
+  id                  String   @id @default(uuid())
+  empresaId           String
+  estudioId           String
+  tipoComprobante     Int
+  ptoVta              Int      @default(1)
+  nroComprobante      Int
+  fechaEmision        DateTime @default(now())
+  cae                 String?
+  caeFchVto           String?
+  receptorCuit        String?
+  receptorRazonSocial String?
+  receptorDomicilio   String?
+  neto                Decimal  @default(0) @db.Decimal(14, 2)
+  iva                 Decimal  @default(0) @db.Decimal(14, 2)
+  total               Decimal  @default(0) @db.Decimal(14, 2)
+  estado              String   @default("EMITIDO")
+  simulado            Boolean  @default(false)
+  observaciones       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  empresa  Empresa                         @relation(fields: [empresaId], references: [id])
+  estudio  Estudio                         @relation(fields: [estudioId], references: [id])
+  detalles DetalleComprobanteElectronico[]
+
+  @@index([empresaId, fechaEmision])
+  @@index([estudioId, fechaEmision])
+  @@map("comprobantes_electronicos")
+}
+
+model DetalleComprobanteElectronico {
+  id            String  @id @default(uuid())
+  comprobanteId String
+  descripcion   String
+  cantidad      Decimal @default(1) @db.Decimal(10, 2)
+  precioUnit    Decimal @db.Decimal(14, 2)
+  alicuotaIva   Decimal @default(21) @db.Decimal(5, 2)
+  subtotal      Decimal @db.Decimal(14, 2)
+  ivaImporte    Decimal @default(0) @db.Decimal(14, 2)
+  orden         Int     @default(0)
+
+  comprobante ComprobanteElectronico @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+
+  @@map("detalles_comprobantes_electronicos")
+}
