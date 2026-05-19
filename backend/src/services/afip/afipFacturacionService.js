@@ -154,7 +154,7 @@ async function facturarMasivo(estudio, items, { simulado = false } = {}) {
 
       let resultado;
       if (simulado || process.env.AFIP_AMBIENTE === 'SIMULADO') {
-        resultado = simularEmision(item, empresa);
+        resultado = simularEmision(item, empresa, estudio);
       } else {
         resultado = await emitirFactura(estudio, empresa, item);
       }
@@ -208,10 +208,11 @@ async function facturarMasivo(estudio, items, { simulado = false } = {}) {
   return out;
 }
 
-function simularEmision(item, empresa) {
+function simularEmision(item, empresa, estudio) {
   const cae = Array.from({ length: 14 }, () => Math.floor(Math.random() * 10)).join('');
   const vto = new Date(Date.now() + 10 * 86400000);
-  const tipo = tipoComprobantePara('RESPONSABLE_INSCRIPTO', empresa.condicionIVA);
+  const condicionEmisor = estudio?.condicionIVA || process.env.AFIP_CONDICION_EMISOR || 'RESPONSABLE_INSCRIPTO';
+  const tipo = item.tipoComprobante || tipoComprobantePara(condicionEmisor, empresa.condicionIVA);
   return {
     cae,
     caeFchVto: fechaAAfipFormat(vto),

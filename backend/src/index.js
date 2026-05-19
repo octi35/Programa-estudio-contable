@@ -1,4 +1,6 @@
 require('dotenv').config();
+// Sentry debe inicializarse ANTES de importar express para instrumentación
+const sentry = require('./lib/sentry');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -12,6 +14,9 @@ const logger = require('./utils/logger');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Sentry init (debe ir antes de cualquier middleware)
+sentry.init(app);
 
 // Security middleware
 app.use(helmet());
@@ -87,6 +92,9 @@ app.use('/api', routes);
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString(), version: '1.0.0' });
 });
+
+// Sentry error handler (debe ir antes de errorHandler propio)
+sentry.setupErrorHandler(app);
 
 // Error handler (must be last)
 app.use(errorHandler);

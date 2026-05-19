@@ -1,4 +1,5 @@
 import React from 'react';
+import { captureException } from '../lib/sentry';
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -14,6 +15,8 @@ export default class ErrorBoundary extends React.Component {
     // Logueo amistoso para diagnóstico
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info?.componentStack);
+    // Reportar a Sentry (no-op si no está configurado)
+    captureException(error, { componentStack: info?.componentStack });
   }
 
   reset = () => {

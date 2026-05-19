@@ -1,7 +1,20 @@
 const logger = require('../utils/logger');
+const sentry = require('../lib/sentry');
 
 function errorHandler(err, req, res, next) {
   logger.error(err.message, { stack: err.stack, path: req.path, method: req.method });
+
+  // Reportar a Sentry SOLO errores 500+ (4xx son fallas del cliente, no del server)
+  const status = err.statusCode || err.status || 500;
+  if (status >= 500) {
+    sentry.captureException(err, {
+      path: req.path,
+      method: req.method,
+      usuarioId: req.usuario?.id,
+      estudioId: req.usuario?.estudioId,
+      ip: req.ip,
+    });
+  }
 
   if (err.name === 'PrismaClientKnownRequestError') {
     if (err.code === 'P2002') {
@@ -24,7 +37,6 @@ function errorHandler(err, req, res, next) {
     return res.status(400).json({ error: err.message });
   }
 
-  const status = err.statusCode || err.status || 500;
   const message = status < 500 ? err.message : 'Error interno del servidor';
 
   res.status(status).json({ error: message });

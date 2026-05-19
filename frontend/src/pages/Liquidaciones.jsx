@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon, EnvelopeIcon } from '@heroicons/react/24/outline';
+import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon, EnvelopeIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../api/client';
@@ -372,6 +372,38 @@ export default function Liquidaciones() {
     openAuthed(`/api/liquidaciones/${id}/recibo`);
   };
 
+  const enviarRecibosWhatsapp = async () => {
+    if (!filtros.empresaId) return;
+    const empresa = empresas.find(e => e.id === filtros.empresaId);
+    const periodo = `${mesNombre(filtros.mes)} ${filtros.anio}`;
+    if (!await confirm({
+      title: 'Enviar recibos por WhatsApp',
+      message: `Se enviarán los recibos PDF por WhatsApp a TODOS los empleados de ${empresa?.razonSocial} con liquidación CONFIRMADA en ${periodo} que tengan teléfono cargado.`,
+      details: [
+        'Requiere WHATSAPP_PROVIDER configurado en el backend (twilio/meta).',
+        'Si el provider es "mock", el envío se simula sin enviar mensajes reales.',
+        'El PDF queda accesible públicamente en /uploads/recibos/ para que WhatsApp lo descargue.',
+      ],
+      confirmText: 'Enviar WhatsApp',
+    })) return;
+
+    const toastId = toast.loading('Generando recibos y enviando WhatsApp...');
+    try {
+      const r = await api.post('/liquidaciones/enviar-recibos-whatsapp', {
+        empresaId: filtros.empresaId,
+        anio: Number(filtros.anio),
+        mes: Number(filtros.mes),
+      });
+      const { total, enviados, sinTelefono, errores, provider } = r.data;
+      toast.success(
+        `Enviados: ${enviados}/${total} (${provider})` +
+        (sinTelefono > 0 ? ` · Sin tel: ${sinTelefono}` : '') +
+        (errores > 0 ? ` · Errores: ${errores}` : ''),
+        { id: toastId, duration: 6000 }
+      );
+    } catch (_) { toast.dismiss(toastId); }
+  };
+
   const enviarRecibosBulk = async () => {
     if (!filtros.empresaId) return;
     const empresa = empresas.find(e => e.id === filtros.empresaId);
@@ -461,7 +493,10 @@ export default function Liquidaciones() {
                 <DocumentTextIcon className="w-4 h-4" /> Todos los Recibos PDF
               </button>
               <button onClick={enviarRecibosBulk} className="btn-secondary text-sm">
-                <EnvelopeIcon className="w-4 h-4" /> Enviar recibos por email
+                <EnvelopeIcon className="w-4 h-4" /> Recibos por email
+              </button>
+              <button onClick={enviarRecibosWhatsapp} className="btn-secondary text-sm">
+                <ChatBubbleLeftRightIcon className="w-4 h-4 text-green-600" /> Recibos por WhatsApp
               </button>
             </>
           )}

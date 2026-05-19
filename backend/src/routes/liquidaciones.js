@@ -670,6 +670,113 @@ router.get('/:id/recibo', auth, [param('id').isUUID(), validate], async (req, re
   }
 });
 
+// POST /api/liquidaciones/enviar-recibos-whatsapp — envía recibos PDF por WhatsApp
+// Body: { empresaId, anio, mes, tipo? }
+// Para que el destinatario pueda descargar el PDF, lo guardamos en /uploads/recibos/
+// y enviamos la URL pública. Requiere PUBLIC_URL configurada para producción.
+router.post('/enviar-recibos-whatsapp', auth, [
+  body('empresaId').isUUID(),
+  body('anio').isInt({ min: 2000, max: 2099 }),
+  body('mes').isInt({ min: 1, max: 12 }),
+  validate,
+], async (req, res, next) => {
+  try {
+    const { empresaId, anio, mes, tipo = 'MENSUAL' } = req.body;
+
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+      include: { estudio: { select: { razonSocial: true } } },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: { periodo: { empresaId, anio: Number(anio), mes: Number(mes), tipo }, estado: 'CONFIRMADO' },
+      include: {
+        empleado: { include: { empresa: { include: { estudio: true, convenio: true } } } },
+        periodo: true,
+        detalles: { orderBy: { orden: 'asc' } },
+      },
+      orderBy: { empleado: { apellido: 'asc' } },
+    });
+
+    if (liquidaciones.length === 0) {
+      return res.status(404).json({ error: 'No hay liquidaciones CONFIRMADAS en este período' });
+    }
+
+    const { enviarRecibo: enviarReciboWA } = require('../services/whatsappService');
+    const fs = require('fs');
+    const path = require('path');
+
+    // Preparar carpeta pública para recibos
+    const uploadDir = path.join(__dirname, '..', '..', process.env.UPLOAD_DIR || 'uploads', 'recibos');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+
+    const enviados = [];
+    const sinTelefono = [];
+    const errores = [];
+    const MESES_NOM = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const periodoStr = `${MESES_NOM[Number(mes) - 1]} ${anio}`;
+
+    // Chunk de 3 para no saturar la API del provider
+    const CHUNK = 3;
+    for (let i = 0; i < liquidaciones.length; i += CHUNK) {
+      const slice = liquidaciones.slice(i, i + CHUNK);
+      await Promise.allSettled(slice.map(async (liq) => {
+        const empleado = liq.empleado;
+        const nombre = `${empleado.apellido}, ${empleado.nombre}`;
+        const telefono = empleado.telefono;
+        if (!telefono) {
+          sinTelefono.push({ empleadoId: empleado.id, nombre, cuil: empleado.cuil });
+          return;
+        }
+        try {
+          // Generar PDF y guardarlo en /uploads/recibos/<liqId>.pdf (URL pública)
+          const pdfBuffer = await pdfService.generarRecibo(liq);
+          const fileName = `recibo_${liq.id}.pdf`;
+          const filePath = path.join(uploadDir, fileName);
+          fs.writeFileSync(filePath, pdfBuffer);
+          const pdfUrl = `${baseUrl}/uploads/recibos/${fileName}`;
+
+          const r = await enviarReciboWA({
+            telefono,
+            empleadoNombre: empleado.nombre,
+            periodo: periodoStr,
+            neto: liq.totalNeto,
+            pdfUrl,
+            pdfNombre: fileName,
+            estudioNombre: empresa.estudio?.razonSocial,
+          });
+          enviados.push({ empleadoId: empleado.id, nombre, telefono, providerId: r.providerId, provider: r.provider });
+        } catch (e) {
+          errores.push({ empleadoId: empleado.id, nombre, telefono, error: e.message });
+        }
+      }));
+    }
+
+    await logAccion({
+      usuarioId: req.usuario.id,
+      estudioId: req.usuario.estudioId,
+      accion: 'ENVIAR_RECIBOS_WHATSAPP',
+      entidad: 'PeriodoLiquidacion',
+      detalle: {
+        empresaId, anio, mes, tipo,
+        total: liquidaciones.length, enviados: enviados.length, sinTelefono: sinTelefono.length, errores: errores.length,
+      },
+      ip: req.ip,
+    });
+
+    res.json({
+      total: liquidaciones.length,
+      enviados: enviados.length,
+      sinTelefono: sinTelefono.length,
+      errores: errores.length,
+      provider: require('../services/whatsappService').PROVIDER,
+      detalle: { enviados, sinTelefono, errores },
+    });
+  } catch (err) { next(err); }
+});
+
 // POST /api/liquidaciones/enviar-recibos-bulk — envía por email los recibos
 // PDF de todas las liquidaciones CONFIRMADAS de un período a sus empleados.
 // Body: { empresaId, anio, mes, tipo? }
