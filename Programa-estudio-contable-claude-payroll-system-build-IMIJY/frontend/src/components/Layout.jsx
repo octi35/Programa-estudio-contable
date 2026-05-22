@@ -59,6 +59,7 @@ const menuConfig = [
       { to: '/ausentismos', label: 'Ausentismos' },
       { to: '/liquidaciones', label: 'Liquidaciones' },
       { to: '/liquidacion-final', label: 'Liquidación Final' },
+      { to: '/libro-sueldos', label: 'Libro de Sueldos' },
       { to: '/conceptos', label: 'Conceptos' },
       { to: '/convenios', label: 'Convenios (CCT)' },
     ],

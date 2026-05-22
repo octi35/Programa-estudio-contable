@@ -369,6 +369,54 @@ router.get('/f931', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/reportes/libro-sueldos-data?empresaId&anio&mes — Previsualización JSON del Libro de Sueldos
+router.get('/libro-sueldos-data', auth, async (req, res, next) => {
+  try {
+    const { empresaId, anio, mes } = req.query;
+    if (!empresaId || !anio || !mes) return res.status(400).json({ error: 'empresaId, anio y mes requeridos' });
+
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+      include: { convenio: true },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: { periodo: { empresaId, anio: Number(anio), mes: Number(mes) }, tipo: 'MENSUAL', estado: { in: ['CALCULADO', 'CONFIRMADO'] } },
+      include: { empleado: { select: { apellido: true, nombre: true, cuil: true, legajoNumero: true, categoria: true } } },
+      orderBy: { empleado: { apellido: 'asc' } },
+    });
+
+    const filas = liquidaciones.map(liq => ({
+      id: liq.id,
+      legajo: liq.empleado.legajoNumero || '—',
+      nombre: `${liq.empleado.apellido}, ${liq.empleado.nombre}`,
+      cuil: liq.empleado.cuil,
+      categoria: liq.empleado.categoria || '—',
+      diasTrabajados: liq.diasTrabajados || 30,
+      totalHaberes: Number(liq.totalHaberes),
+      totalDescuentos: Number(liq.totalDescuentos),
+      totalNeto: Number(liq.totalNeto),
+      totalContribuciones: Number(liq.totalContribuciones),
+      estado: liq.estado,
+    }));
+
+    const totales = filas.reduce((acc, f) => ({
+      totalHaberes: acc.totalHaberes + f.totalHaberes,
+      totalDescuentos: acc.totalDescuentos + f.totalDescuentos,
+      totalNeto: acc.totalNeto + f.totalNeto,
+      totalContribuciones: acc.totalContribuciones + f.totalContribuciones,
+    }), { totalHaberes: 0, totalDescuentos: 0, totalNeto: 0, totalContribuciones: 0 });
+
+    res.json({
+      empresa: { id: empresa.id, razonSocial: empresa.razonSocial, cuit: empresa.cuit, convenio: empresa.convenio?.nombre || 'LCT 20.744' },
+      periodo: { anio: Number(anio), mes: Number(mes), nombre: `${MESES_NOM[Number(mes) - 1]} ${anio}` },
+      filas,
+      totales,
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/reportes/libro-sueldos?empresaId&anio&mes — Exporta Libro de Sueldos Digital (LSD)
 router.get('/libro-sueldos', auth, async (req, res, next) => {
   try {

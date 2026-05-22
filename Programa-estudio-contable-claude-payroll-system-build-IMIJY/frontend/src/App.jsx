@@ -16,6 +16,7 @@ import EmpleadoDetalle from './pages/EmpleadoDetalle';
 import Liquidaciones from './pages/Liquidaciones';
 import LiquidacionDetalle from './pages/LiquidacionDetalle';
 import Conceptos from './pages/Conceptos';
+import LibroSueldos from './pages/LibroSueldos';
 
 // Pages nuevas - Sueldos
 import Ausentismos from './pages/Ausentismos';
@@ -96,6 +97,7 @@ export default function App() {
             <Route path="liquidaciones" element={Safe(<Liquidaciones />)} />
             <Route path="liquidaciones/:id" element={Safe(<LiquidacionDetalle />)} />
             <Route path="conceptos" element={Safe(<Conceptos />)} />
+            <Route path="libro-sueldos" element={Safe(<LibroSueldos />)} />
             <Route path="ausentismos" element={Safe(<Ausentismos />)} />
             <Route path="convenios" element={Safe(<Convenios />)} />
 
