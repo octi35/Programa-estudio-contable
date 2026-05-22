@@ -66,7 +66,7 @@ export default function PerfilEstudio() {
         <div className="flex items-center gap-6">
           <div className="w-24 h-24 rounded-xl border-2 border-dashed border-gray-300 flex items-center justify-center bg-gray-50 overflow-hidden flex-shrink-0">
             {estudio?.logo ? (
-              <img src={`/uploads/${estudio.logo}`} alt="Logo" className="w-full h-full object-contain p-2" />
+              <img src={`${import.meta.env.VITE_API_URL || ''}/uploads/${estudio.logo}`} alt="Logo" className="w-full h-full object-contain p-2" />
             ) : (
               <PhotoIcon className="w-10 h-10 text-gray-300" />
             )}

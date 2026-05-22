@@ -20,8 +20,20 @@ sentry.init(app);
 
 // Security middleware
 app.use(helmet());
+
+// FRONTEND_URL admite varios orígenes separados por coma (dominio de producción
+// en Vercel + dominios de preview). Si no se define, sólo se permite localhost.
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: (origin, cb) => {
+    // Permite herramientas sin Origin (curl, health checks) y orígenes whitelisteados.
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`Origen no permitido por CORS: ${origin}`));
+  },
   credentials: true,
 }));
 

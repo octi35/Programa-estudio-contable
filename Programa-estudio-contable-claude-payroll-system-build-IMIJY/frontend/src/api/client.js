@@ -1,8 +1,13 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
+// En producción (Vercel) el backend vive en otro dominio (Railway). Se define
+// VITE_API_URL = https://tu-backend.up.railway.app y todas las llamadas usan ese
+// origen. En desarrollo queda vacío y se usa el proxy de Vite (/api → :3001).
+const API_ORIGIN = import.meta.env.VITE_API_URL || '';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: `${API_ORIGIN}/api`,
   timeout: 30000,
   withCredentials: true, // envía cookie httpOnly auth_token automáticamente
 });

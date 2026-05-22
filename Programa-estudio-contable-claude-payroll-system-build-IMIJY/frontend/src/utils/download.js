@@ -3,7 +3,18 @@
 // endpoints que requieren `auth` middleware.
 import toast from 'react-hot-toast';
 
+// Mismo origen configurable que el cliente axios. En prod apunta al backend
+// (Railway); en dev queda vacío y el proxy de Vite resuelve /api y /uploads.
+const API_ORIGIN = import.meta.env.VITE_API_URL || '';
+
+// Prefija el origen del backend a rutas absolutas del servidor (/api, /uploads).
+function withApiOrigin(url) {
+  if (!API_ORIGIN) return url;
+  return url.startsWith('/') ? `${API_ORIGIN}${url}` : url;
+}
+
 function appendToken(url) {
+  url = withApiOrigin(url);
   const token = localStorage.getItem('token');
   if (!token) return url;
   const sep = url.includes('?') ? '&' : '?';
@@ -43,7 +54,7 @@ export async function downloadWithProgress(url, { filename, loadingLabel = 'Gene
 
   const toastId = toast.loading(loadingLabel);
   try {
-    const resp = await fetch(url, { headers });
+    const resp = await fetch(withApiOrigin(url), { headers });
     if (!resp.ok) {
       const txt = await resp.text().catch(() => '');
       throw new Error(txt || `Error ${resp.status}`);
