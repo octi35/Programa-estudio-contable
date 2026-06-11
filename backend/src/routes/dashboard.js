@@ -208,7 +208,7 @@ router.get('/alertas-criticas', auth, async (req, res, next) => {
     ] = await Promise.all([
       // Empleados activos sin CUIL o con CUIL inválido (longitud != 13 con guiones)
       prisma.empleado.findMany({
-        where: { activo: true, ...empresasFilter, OR: [{ cuil: '' }, { cuil: null }] },
+        where: { activo: true, ...empresasFilter, cuil: '' },
         select: { id: true, apellido: true, nombre: true, cuil: true, empresa: { select: { id: true, razonSocial: true } } },
         take: 50,
       }),

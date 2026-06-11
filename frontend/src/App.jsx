@@ -40,6 +40,7 @@ import BalanceGeneral from './pages/BalanceGeneral';
 import ImportarNovedades from './pages/ImportarNovedades';
 import LiquidacionFinal from './pages/LiquidacionFinal';
 import LogAcciones from './pages/LogAcciones';
+import Contribuciones from './pages/Contribuciones';
 import Usuarios from './pages/Usuarios';
 import PerfilEstudio from './pages/PerfilEstudio';
 import Admin from './pages/Admin';
@@ -57,6 +58,11 @@ import MonotributoCategorias from './pages/MonotributoCategorias';
 import Presupuesto from './pages/Presupuesto';
 import CuentasCorrientes from './pages/CuentasCorrientes';
 import TiposCambio from './pages/TiposCambio';
+
+// Pages nuevas - Automatización y portal
+import ControlLiquidaciones from './pages/ControlLiquidaciones';
+import SimuladorCosto from './pages/SimuladorCosto';
+import PortalEmpleado from './pages/PortalEmpleado';
 
 function PrivateRoute({ children }) {
   const { usuario, loading } = useAuth();
@@ -82,6 +88,8 @@ export default function App() {
           <Route path="/login" element={Safe(<Login />)} />
           <Route path="/forgot-password" element={Safe(<ForgotPassword />)} />
           <Route path="/reset-password" element={Safe(<ResetPassword />)} />
+          {/* Portal del empleado: público, autenticado por token firmado en la URL */}
+          <Route path="/portal" element={Safe(<PortalEmpleado />)} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={Safe(<Dashboard />)} />
@@ -121,6 +129,9 @@ export default function App() {
             {/* Herramientas */}
             <Route path="importar-novedades" element={Safe(<ImportarNovedades />)} />
             <Route path="liquidacion-final" element={Safe(<LiquidacionFinal />)} />
+            <Route path="contribuciones" element={Safe(<Contribuciones />)} />
+            <Route path="control-liquidaciones" element={Safe(<ControlLiquidaciones />)} />
+            <Route path="simulador-costo" element={Safe(<SimuladorCosto />)} />
             <Route path="log-acciones" element={Safe(<LogAcciones />)} />
 
             {/* Impuestos */}

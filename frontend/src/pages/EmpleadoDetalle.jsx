@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, CalculatorIcon, DocumentTextIcon, UserIcon, BriefcaseIcon, UsersIcon, ClipboardDocumentListIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, CalculatorIcon, DocumentTextIcon, UserIcon, BriefcaseIcon, UsersIcon, ClipboardDocumentListIcon, ClockIcon, LinkIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -571,6 +571,14 @@ export default function EmpleadoDetalle() {
 
   useEffect(() => { cargar(); }, [id]);
 
+  const generarLinkPortal = async () => {
+    try {
+      const r = await api.post(`/empleados/${id}/portal-link`);
+      await navigator.clipboard.writeText(r.data.url);
+      toast.success(`Link copiado al portapapeles (válido ${r.data.expiraEn}). Envíaselo al empleado.`, { duration: 6000 });
+    } catch (_) { /* interceptor */ }
+  };
+
   const handleBaja = async (data) => {
     if (!await confirm({
       title: 'Dar de baja al empleado',
@@ -626,7 +634,12 @@ export default function EmpleadoDetalle() {
             <p className="text-xs text-gray-400">{antiguedadAnios} años antigüedad</p>
           </div>
           {empleado.activo && (
-            <button onClick={() => setBajaModal(true)} className="btn-danger">Registrar baja</button>
+            <>
+              <button onClick={generarLinkPortal} className="btn-secondary" title="Genera un link de 30 días para que el empleado vea y firme sus recibos">
+                <LinkIcon className="w-4 h-4" /> Link del portal
+              </button>
+              <button onClick={() => setBajaModal(true)} className="btn-danger">Registrar baja</button>
+            </>
           )}
         </div>
       </div>

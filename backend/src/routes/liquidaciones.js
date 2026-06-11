@@ -7,6 +7,7 @@ const validate = require('../middleware/validate');
 const liquidacionService = require('../services/liquidacionService');
 const pdfService = require('../services/pdfService');
 const { crearAsientoLiquidacion } = require('../services/asientosAutoService');
+const controlLiquidacionService = require('../services/sueldos/controlLiquidacionService');
 const logAccion = require('../utils/logAccion');
 const ExcelJS = require('exceljs');
 
@@ -534,6 +535,23 @@ router.get('/nomina-excel', auth, async (req, res, next) => {
     res.setHeader('Content-Disposition',`attachment; filename="nomina_${empresa.cuit}_${anio}${String(mes).padStart(2,'0')}.xlsx"`);
     res.send(buffer);
   } catch (err) { next(err); }
+});
+
+// GET /api/liquidaciones/control — pre-control del período: detecta anomalías
+// (netos negativos, variaciones >25%, empleados sin liquidar, duplicados, etc.)
+router.get('/control', auth, async (req, res, next) => {
+  try {
+    const { empresaId, anio, mes, tipo = 'MENSUAL' } = req.query;
+    if (!empresaId || !anio || !mes) {
+      return res.status(400).json({ error: 'empresaId, anio y mes son requeridos' });
+    }
+    const resultado = await controlLiquidacionService.controlarPeriodo(
+      req.usuario.estudioId, empresaId, parseInt(anio, 10), parseInt(mes, 10), tipo
+    );
+    res.json(resultado);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /api/liquidaciones/:id

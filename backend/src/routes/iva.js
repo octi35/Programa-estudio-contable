@@ -662,6 +662,11 @@ router.post('/comprobantes', auth, [
 
     const { items, ...compData } = req.body;
     compData.fecha = new Date(compData.fecha);
+    compData.puntoVenta = Number(compData.puntoVenta);
+    compData.numero = Number(compData.numero);
+    if (compData.numeroHasta) compData.numeroHasta = Number(compData.numeroHasta);
+    compData.periodoFiscalAnio = Number(compData.periodoFiscalAnio);
+    compData.periodoFiscalMes = Number(compData.periodoFiscalMes);
 
     // Calcula IVA automáticamente desde los ítems si se proveen
     if (items && items.length > 0) {
@@ -716,6 +721,11 @@ router.put('/comprobantes/:id', auth, [param('id').isUUID(), validate], async (r
 
     const { items, empresaId, ...data } = req.body;
     if (data.fecha) data.fecha = new Date(data.fecha);
+    if (data.puntoVenta !== undefined) data.puntoVenta = Number(data.puntoVenta);
+    if (data.numero !== undefined) data.numero = Number(data.numero);
+    if (data.numeroHasta !== undefined) data.numeroHasta = Number(data.numeroHasta);
+    if (data.periodoFiscalAnio !== undefined) data.periodoFiscalAnio = Number(data.periodoFiscalAnio);
+    if (data.periodoFiscalMes !== undefined) data.periodoFiscalMes = Number(data.periodoFiscalMes);
 
     const updated = await prisma.comprobanteIVA.update({
       where: { id: req.params.id },

@@ -1,0 +1,26 @@
+# Blueprint de Render — backend del sistema de estudio contable.
+# La base de datos vive en Supabase (free tier); acá solo corre la API.
+# En https://dashboard.render.com → New → Blueprint → conectar este repo.
+services:
+  - type: web
+    name: estudio-contable-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: DATABASE_URL
+        sync: false # pegar la URL del pooler de Supabase (Session mode, puerto 5432)
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false # URL del frontend en Vercel, ej: https://estudio-contable.vercel.app
+      - key: UPLOAD_DIR
+        value: ./uploads

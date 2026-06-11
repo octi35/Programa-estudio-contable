@@ -482,4 +482,31 @@ router.get('/:id/familiares', auth, [param('id').isUUID(), validate], async (req
   }
 });
 
+// POST /api/empleados/:id/portal-link — genera link de acceso al portal del empleado
+// (token firmado, 30 días). Se le envía al empleado por WhatsApp/email.
+router.post('/:id/portal-link', auth, [param('id').isUUID(), validate], async (req, res, next) => {
+  try {
+    const empleado = await prisma.empleado.findFirst({
+      where: { id: req.params.id, empresa: { estudioId: req.usuario.estudioId } },
+      select: { id: true, apellido: true, nombre: true },
+    });
+    if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { empleadoId: empleado.id, scope: 'portal-empleado' },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    const base = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.json({
+      url: `${base}/portal?token=${token}`,
+      expiraEn: '30 días',
+      empleado: `${empleado.apellido}, ${empleado.nombre}`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

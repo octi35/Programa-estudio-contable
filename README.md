@@ -1,139 +1,106 @@
-# Sistema de Liquidación de Sueldos — Estudio Contable
+# EstudioPRO — Gestión integral para estudios contables argentinos
 
-Sistema moderno para gestión de sueldos en estudios contables argentinos.
-Reemplaza al software **SU2007/SueldosV5x** de Nacional Software.
+![CI](https://github.com/octi35/Programa-estudio-contable/actions/workflows/ci.yml/badge.svg)
+![Node](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-## Stack tecnológico
+Sistema web completo para estudios contables: **sueldos, IVA, contabilidad, impuestos, facturación electrónica e integraciones con ARCA (ex AFIP)** — pensado para reemplazar software de escritorio de los 2000 (SU2007/SueldosV5x) con una plataforma moderna, multiempresa y automatizada.
 
-| Capa | Tecnología |
-|------|-----------|
-| Frontend | React 18 + Tailwind CSS + Vite |
-| Backend | Node.js + Express |
-| Base de datos | PostgreSQL + Prisma ORM |
-| PDF | PDFKit |
-| Excel | ExcelJS |
-| Auth | JWT |
+> 🧪 **Demo:** `admin@estudiodemo.com` / `Admin1234!`
 
-## Funcionalidades implementadas
+---
 
-### Gestión
-- ABM de empresas (clientes del estudio) con CUIT, convenio colectivo
-- ABM de empleados (legajos) con CUIL, categoría, básico, obra social
-- Historial de altas, bajas y modificaciones salariales
-- ABM de conceptos de liquidación configurables por convenio
+## ✨ Lo que lo hace distinto
 
-### Liquidaciones
-- Liquidación mensual automática para toda la nómina de una empresa
-- SAC (aguinaldo) 1° y 2° semestre con mejor remuneración del semestre
-- Vacaciones según antigüedad (LCT art. 150: 14/21/28/35 días hábiles)
-- Cálculo proporcional por días trabajados
-- Horas extras 50% (días hábiles) y 100% (feriados/domingos)
-- Antigüedad (1% por año completo, máximo 100%)
-- Presentismo (8.33% del básico proporcional)
+| Diferencial | Qué automatiza |
+|---|---|
+| 🛡️ **Control pre-cierre inteligente** | Antes de cerrar el período, detecta solo: netos negativos, variaciones >25% vs mes anterior, empleados activos sin liquidar, descuentos sobre el tope LCT art. 133, conceptos duplicados y recibos sin aportes de ley. Semáforo apto/no apto. |
+| 👤 **Portal del empleado** | El estudio genera un link seguro (token firmado, 30 días) y el empleado ve sus recibos, los descarga en PDF y **firma conformidad** (queda fecha + IP). Se acabó el ida y vuelta de recibos por email. |
+| 🧮 **Simulador de costo laboral** | "¿Cuánto me cuesta contratar a alguien de $X?" — bruto, bolsillo, contribuciones, provisión de SAC y costo anual en un clic. Ideal para responderle al cliente en el momento. |
+| 📲 **Recibos por WhatsApp** | Envío masivo de recibos PDF a toda la nómina por WhatsApp con un clic. |
+| 🤖 **Cierre automático y alertas** | Crons que cierran períodos, avisan vencimientos por email y revisan E-Ventanilla de ARCA. |
+| 🧾 **Integración ARCA (ex AFIP)** | Facturación electrónica (WSFE) individual y masiva, Padrón A13 (consulta de CUIT real), E-Ventanilla, F.931/SICOSS y Libro de Sueldos Digital. |
+| 📚 **Asientos automáticos** | Cada liquidación confirmada genera su asiento contable; exportación a Excel/formatos contables. |
 
-### Normativa argentina (LCT 20.744)
-- Aportes empleado: jubilación 11% + obra social 3% + INSSJP/PAMI 3% = 17%
-- Contribuciones empleador: jubilación 16% + OS 6% + INSSJP 1.5% + ART + Fondo desempleo
-- Sindicato 2% + cuota solidaria (configurable por convenio)
-- Convenios cargados: Comercio (130/75), Construcción (76/75), Gastronómico (507/07),
-  Metalúrgico (160/75), Casas Particulares (Decreto 326/56), LCT general
+## 📦 Módulos
 
-### Documentos y exportaciones
-- Recibo de sueldo en PDF (formato doble: original + duplicado)
-- Libro de Sueldos Digital (LSD) en Excel formato AFIP
-- Exportación F.931 / SICOSS en texto plano para presentación AFIP
-- Carga de documentos adjuntos (contratos, DNI, certificados)
+- **Sueldos**: liquidación mensual/SAC/vacaciones/final según LCT 20.744, convenios (Comercio, UOCRA, gastronómicos, metalúrgicos, casas particulares), antigüedad, presentismo, horas extras, contribuciones patronales configurables con vigencias (Dec. 814/01), recibos PDF doble, LSD, F.931.
+- **IVA**: libro compras/ventas, posición mensual, comprobantes con OCR (scaffold), proveedores/clientes.
+- **Contabilidad**: plan de cuentas, asientos (manuales y automáticos), mayor, balance de sumas y saldos, estado de resultados, balance general, ejercicios.
+- **Impuestos**: IIBB (convenio multilateral, coeficientes), Ganancias 4ª categoría, Monotributo (categorías y recategorización), agenda de vencimientos con alertas.
+- **Finanzas**: cuentas bancarias con webhooks de movimientos, cuentas corrientes, presupuestos, tipos de cambio (dólar en vivo vía dolarapi).
+- **Estudio**: honorarios y facturación a clientes, certificados laborales, usuarios con roles, log de auditoría completo, multi-tenant por estudio.
 
-### Panel y reportes
-- Dashboard con estado de liquidación por empresa y período
-- Resumen de totales (haberes, descuentos, neto, contribuciones empleador)
-- Comparativo histórico de períodos
+## 🏗️ Arquitectura
 
-## Inicio rápido con Docker
+```
+┌─────────────┐     /api (rewrite)     ┌──────────────┐      ┌─────────────┐
+│   Frontend   │ ─────────────────────▶ │   Backend    │ ───▶ │ PostgreSQL  │
+│ React+Vite   │                        │ Node+Express │      │  (Prisma)   │
+│  (Vercel)    │                        │   (Render)   │      │ (Supabase)  │
+└─────────────┘                        └──────┬───────┘      └─────────────┘
+                                              │
+                              ┌───────────────┼────────────────┐
+                              ▼               ▼                ▼
+                          ARCA (WSFE,     WhatsApp API     SMTP/Sentry
+                          Padrón A13,     (recibos)        (alertas/
+                          E-Ventanilla)                    observabilidad)
+```
 
+**Stack:** Node 20 + Express + Prisma 6 / React 18 + Tailwind + Vite / PostgreSQL 16 / Jest (120+ tests) / Docker Compose / GitHub Actions.
+
+## 🚀 Inicio rápido
+
+### Con Docker (recomendado)
 ```bash
-git clone <repo>
+git clone https://github.com/octi35/Programa-estudio-contable.git
 cd Programa-estudio-contable
 docker compose up -d
-
-# Frontend: http://localhost
-# API:      http://localhost:3001
-# Login:    admin@estudiodemo.com  /  Admin1234!
+# Frontend: http://localhost — API: http://localhost:3001
 ```
 
-## Desarrollo local
-
-**Backend**
+### Desarrollo local
 ```bash
-cd backend
-cp .env.example .env          # completar DATABASE_URL
-npm install
-npx prisma migrate dev
-node prisma/seed.js
-npm run dev                   # API en http://localhost:3001
+# Base de datos
+docker compose up -d postgres
+
+# Backend (http://localhost:3001)
+cd backend && cp .env.example .env && npm install
+npx prisma migrate dev && node prisma/seed.js && npm run dev
+
+# Frontend (http://localhost:5173)
+cd frontend && npm install && npm run dev
 ```
 
-**Frontend**
+### Tests
 ```bash
-cd frontend
-npm install
-npm run dev                   # App en http://localhost:5173
+cd backend && npm test        # 120+ tests de motor de cálculo, contribuciones y controles
 ```
 
-## Estructura del proyecto
+## ☁️ Deploy (gratis)
 
-```
-├── backend/
-│   ├── prisma/
-│   │   ├── schema.prisma           # Esquema completo (12 modelos)
-│   │   └── seed.js                 # Datos iniciales: convenios, conceptos, empresa demo
-│   └── src/
-│       ├── middleware/             # auth JWT, errorHandler, validate
-│       ├── routes/                 # empresas, empleados, convenios, conceptos,
-│       │                           # liquidaciones, documentos, reportes
-│       ├── services/
-│       │   ├── liquidacionService.js   # Motor de cálculo: mensual, SAC, vacaciones
-│       │   ├── pdfService.js           # Recibos PDF doble hoja con PDFKit
-│       │   └── lsdService.js           # LSD Excel (ExcelJS) + F.931 AFIP
-│       └── utils/
-│           └── calculosLaborales.js    # Fórmulas LCT: antigüedad, SAC, vacaciones,
-│                                       # aportes, contribuciones, horas extras
-└── frontend/
-    └── src/
-        ├── pages/
-        │   ├── Dashboard.jsx           # Panel con estado por empresa y período
-        │   ├── Empresas.jsx / EmpresaDetalle.jsx
-        │   ├── Empleados.jsx / EmpleadoDetalle.jsx
-        │   ├── Liquidaciones.jsx       # Listado + cálculo masivo por período
-        │   ├── LiquidacionDetalle.jsx  # Recibo visual interactivo
-        │   └── Conceptos.jsx           # ABM conceptos por convenio
-        └── utils/format.js             # Helpers de formato monetario y fechas
-```
+| Capa | Servicio | Config |
+|---|---|---|
+| Base de datos | [Supabase](https://supabase.com) free | crear proyecto, copiar la URL del *Session pooler* |
+| Backend | [Render](https://render.com) free | New → Blueprint → este repo (usa `render.yaml`); setear `DATABASE_URL` y `FRONTEND_URL` |
+| Frontend | [Vercel](https://vercel.com) free | importar repo, root `frontend/` (el rewrite de `vercel.json` apunta a Render) |
 
-## API REST — Endpoints principales
+El contenedor del backend corre `prisma migrate deploy` + seed al arrancar: la primera levantada deja la base lista.
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | Autenticación → JWT |
-| GET | `/api/empresas` | Listado paginado y buscable |
-| POST | `/api/empresas` | Crear empresa |
-| GET | `/api/empleados` | Listado filtrable por empresa |
-| POST | `/api/empleados` | Crear empleado (genera novedad de alta) |
-| POST | `/api/empleados/:id/baja` | Baja con motivo y fecha |
-| POST | `/api/liquidaciones/calcular` | Calcular liquidación individual |
-| POST | `/api/liquidaciones/periodo` | Liquidar nómina completa de una empresa |
-| POST | `/api/liquidaciones/:id/confirmar` | Confirmar liquidación |
-| GET | `/api/liquidaciones/:id/recibo` | PDF del recibo de sueldo |
-| GET | `/api/documentos/lsd/:id/:anio/:mes` | LSD en Excel para AFIP |
-| GET | `/api/documentos/f931/:id/:anio/:mes` | F.931 / SICOSS |
-| GET | `/api/reportes/panel-estudio` | Datos del dashboard principal |
+## 🔌 Integraciones ARCA (opcionales, por variables de entorno)
 
-## Migración desde archivos DBF (Nacional Software)
+| Variable | Para qué |
+|---|---|
+| `AFIP_CUIT`, `AFIP_CERT`, `AFIP_KEY` | WSFE (facturación electrónica), Padrón A13, E-Ventanilla |
+| `AFIP_PRODUCTION=true` | Cambia de homologación a producción |
+| `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` | Envío de recibos por WhatsApp (Meta Cloud API) |
+| `SMTP_*` | Alertas de vencimientos por email |
+| `SENTRY_DSN` / `VITE_SENTRY_DSN` | Observabilidad backend / frontend |
 
-1. Exportar EMPRESAS.DBF y LEGAJOS.DBF a CSV con un lector dBASE
-2. Usar los endpoints REST en lote para importar empresas y empleados
-3. Los archivos LSD históricos (.xlsx) pueden cargarse como documentos adjuntos
+Sin estas variables el sistema funciona igual: las integraciones se desactivan con degradación elegante.
 
-## Licencia
+## 📄 Licencia
 
 MIT
