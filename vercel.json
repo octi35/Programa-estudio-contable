@@ -4,8 +4,25 @@
   "outputDirectory": "frontend/dist",
   "framework": null,
   "rewrites": [
-    { "source": "/api/:path*", "destination": "https://estudio-contable-api.onrender.com/api/:path*" },
-    { "source": "/uploads/:path*", "destination": "https://estudio-contable-api.onrender.com/uploads/:path*" },
-    { "source": "/((?!api|uploads).*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/api/:path*",
+      "destination": "https://estudio-contable-api.onrender.com/api/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://estudio-contable-api.onrender.com/uploads/:path*"
+    },
+    {
+      "source": "/((?!api|uploads).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "experimentalServices": {
+    "estudio-contable-api": {
+      "type": "web",
+      "root": "backend",
+      "entrypoint": "src/index.js",
+      "routePrefix": "/"
+    }
+  }
 }
