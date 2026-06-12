@@ -16,13 +16,5 @@
       "source": "/((?!api|uploads).*)",
       "destination": "/index.html"
     }
-  ],
-  "experimentalServices": {
-    "estudio-contable-api": {
-      "type": "web",
-      "root": "backend",
-      "entrypoint": "src/index.js",
-      "routePrefix": "/"
-    }
-  }
+  ]
 }
