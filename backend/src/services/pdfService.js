@@ -338,9 +338,11 @@ async function generarComprobanteElectronico(comp, tipoDesc) {
         try {
           const { generarQRUrl } = require('./afip/afipEmisionService');
           const docNro = String(comp.receptorCuit || '0').replace(/[^\d]/g, '') || '0';
+          // Multi-CUIT: el emisor real es la empresa solo si tiene certificado propio
+          const certPropio = !!(comp.empresa?.afipCertificado && comp.empresa?.afipClavePrivada);
           const qrUrl = generarQRUrl({
             fecha: comp.fechaEmision,
-            cuitEmisor: comp.empresa?.cuit || comp.empresa?.estudio?.cuit || '0',
+            cuitEmisor: (certPropio ? comp.empresa?.cuit : comp.empresa?.estudio?.cuit) || comp.empresa?.cuit || '0',
             ptoVta: comp.ptoVta,
             cbteTipo: comp.tipoComprobante,
             nroComprobante: comp.nroComprobante,

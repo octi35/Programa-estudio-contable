@@ -20,6 +20,32 @@ async function configAfipDeEstudio(estudioId) {
 }
 
 /**
+ * Config AFIP para emitir a nombre de una empresa (multi-CUIT).
+ * Si la empresa tiene certificado propio emite con su CUIT y punto de venta;
+ * si no, cae al certificado y CUIT del estudio (comportamiento histórico).
+ */
+async function configAfipDeEmpresa(empresaId, estudioId) {
+  const empresa = await prisma.empresa.findFirst({
+    where: { id: empresaId, ...(estudioId ? { estudioId } : {}) },
+    include: { estudio: true },
+  });
+  if (!empresa) throw Object.assign(new Error('Empresa no encontrada'), { statusCode: 404 });
+
+  const estudio = empresa.estudio;
+  const certPropio = !!(empresa.afipCertificado && empresa.afipClavePrivada);
+
+  return {
+    cuit: (certPropio ? empresa.cuit : estudio.cuit)?.replace(/-/g, '') || '',
+    ambiente: estudio.afipAmbiente || 'SIMULADO',
+    certificado: certPropio ? empresa.afipCertificado : (estudio.afipCertificado || null),
+    clavePrivada: certPropio ? empresa.afipClavePrivada : (estudio.afipClavePrivada || null),
+    ptoVta: certPropio ? (empresa.afipPtoVta || 1) : (estudio.afipPtoVta || 1),
+    certPropio,
+    condicionIVAEmisor: empresa.condicionIVA || null,
+  };
+}
+
+/**
  * Procesa los comprobantes encolados (PENDIENTE_CAE). Para cada uno reintenta
  * la emisión real; si ARCA sigue caído lo deja en cola, si ARCA lo rechaza
  * (error de negocio) lo marca RECHAZADO con el motivo.
@@ -33,7 +59,10 @@ async function procesarColaFacturacion(estudioId = null) {
 
   const pendientes = await prisma.comprobanteElectronico.findMany({
     where,
-    include: { detalles: { orderBy: { orden: 'asc' } } },
+    include: {
+      detalles: { orderBy: { orden: 'asc' } },
+      comprobanteAsociado: { select: { tipoComprobante: true, ptoVta: true, nroComprobante: true } },
+    },
     orderBy: { createdAt: 'asc' },
     take: 50,
   });
@@ -43,8 +72,9 @@ async function procesarColaFacturacion(estudioId = null) {
 
   for (const comp of pendientes) {
     try {
-      configCache[comp.estudioId] = configCache[comp.estudioId] || await configAfipDeEstudio(comp.estudioId);
-      const config = configCache[comp.estudioId];
+      configCache[comp.empresaId] = configCache[comp.empresaId]
+        || await configAfipDeEmpresa(comp.empresaId, comp.estudioId);
+      const config = configCache[comp.empresaId];
 
       const ivaMap = {};
       for (const d of comp.detalles) {
@@ -65,6 +95,14 @@ async function procesarColaFacturacion(estudioId = null) {
         total: Number(comp.total),
         fecha: new Date(), // ARCA exige fecha dentro de la tolerancia; se re-fecha al emitir
         ivaAlicuotas: Object.values(ivaMap),
+        comprobanteAsociado: comp.comprobanteAsociado
+          ? {
+              Tipo: comp.comprobanteAsociado.tipoComprobante,
+              PtoVta: comp.comprobanteAsociado.ptoVta,
+              Nro: comp.comprobanteAsociado.nroComprobante,
+              Cuit: config.cuit,
+            }
+          : null,
       });
 
       await prisma.comprobanteElectronico.update({
@@ -100,4 +138,4 @@ async function procesarColaFacturacion(estudioId = null) {
   return out;
 }
 
-module.exports = { procesarColaFacturacion, configAfipDeEstudio };
+module.exports = { procesarColaFacturacion, configAfipDeEstudio, configAfipDeEmpresa };

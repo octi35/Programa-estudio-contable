@@ -18,10 +18,35 @@ const TIPOS = [
 ];
 const ALICUOTAS = [{ v: 21, l: '21%' }, { v: 10.5, l: '10.5%' }, { v: 27, l: '27%' }, { v: 0, l: 'Exento' }];
 
-function ConfigModal({ onClose }) {
+function ConfigModal({ empresas = [], onClose }) {
   const [config, setConfig] = useState({ ambiente: 'SIMULADO', ptoVta: 1, certificado: '', clavePrivada: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // Multi-CUIT: certificado propio por empresa
+  const [empSel, setEmpSel] = useState('');
+  const [empCfg, setEmpCfg] = useState(null);
+  const [empForm, setEmpForm] = useState({ ptoVta: 1, certificado: '', clavePrivada: '', condicionIVA: '' });
+  const [savingEmp, setSavingEmp] = useState(false);
+
+  useEffect(() => {
+    if (!empSel) { setEmpCfg(null); return; }
+    api.get(`/facturacion/config-empresa/${empSel}`).then(r => {
+      setEmpCfg(r.data);
+      setEmpForm({ ptoVta: r.data.ptoVta || 1, certificado: '', clavePrivada: '', condicionIVA: r.data.condicionIVA || '' });
+    }).catch(() => setEmpCfg(null));
+  }, [empSel]);
+
+  const guardarEmpresa = async () => {
+    setSavingEmp(true);
+    try {
+      await api.put(`/facturacion/config-empresa/${empSel}`, empForm);
+      toast.success('Configuración de la empresa guardada');
+      const r = await api.get(`/facturacion/config-empresa/${empSel}`);
+      setEmpCfg(r.data);
+      setEmpForm(f => ({ ...f, certificado: '', clavePrivada: '' }));
+    } catch (e) { toast.error(e.response?.data?.error || 'Error al guardar'); }
+    finally { setSavingEmp(false); }
+  };
 
   useEffect(() => {
     api.get('/facturacion/config').then(r => {
@@ -85,6 +110,69 @@ function ConfigModal({ onClose }) {
           {saving ? 'Guardando...' : 'Guardar configuración'}
         </button>
       </div>
+
+      {/* Multi-CUIT: certificado por empresa */}
+      <div className="border-t pt-4 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-700">Multi-CUIT — certificado por empresa</h3>
+        <p className="text-xs text-gray-500">
+          Si una empresa tiene su propio certificado de ARCA, sus comprobantes se emiten con el CUIT de la empresa.
+          Sin certificado propio, se usa el del estudio.
+        </p>
+        <select className="w-full border rounded-lg px-3 py-2 text-sm" value={empSel} onChange={e => setEmpSel(e.target.value)}>
+          <option value="">Seleccionar empresa...</option>
+          {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
+        </select>
+
+        {empCfg && (
+          <div className="space-y-3 bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-600">
+              CUIT: <strong>{empCfg.cuit}</strong> ·{' '}
+              {empCfg.tieneCertificado
+                ? <span className="text-green-600 font-medium">✓ Certificado propio cargado (emite con su CUIT)</span>
+                : <span className="text-amber-600">Sin certificado propio (emite con el CUIT del estudio)</span>}
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">Punto de venta</label>
+                <input type="number" min={1} max={9999} className="w-full border rounded px-2 py-1.5 text-sm"
+                  value={empForm.ptoVta} onChange={e => setEmpForm(f => ({ ...f, ptoVta: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-0.5">Condición IVA (emisor)</label>
+                <select className="w-full border rounded px-2 py-1.5 text-sm" value={empForm.condicionIVA}
+                  onChange={e => setEmpForm(f => ({ ...f, condicionIVA: e.target.value }))}>
+                  <option value="">—</option>
+                  <option value="RESPONSABLE_INSCRIPTO">Responsable Inscripto</option>
+                  <option value="MONOTRIBUTISTA">Monotributista</option>
+                  <option value="EXENTO">Exento</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-0.5">Certificado (.crt — pegar contenido)</label>
+              <textarea rows={3} className="w-full border rounded px-2 py-1.5 text-xs font-mono"
+                placeholder="-----BEGIN CERTIFICATE-----"
+                value={empForm.certificado} onChange={e => setEmpForm(f => ({ ...f, certificado: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-0.5">Clave privada (.key — pegar contenido)</label>
+              <textarea rows={3} className="w-full border rounded px-2 py-1.5 text-xs font-mono"
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                value={empForm.clavePrivada} onChange={e => setEmpForm(f => ({ ...f, clavePrivada: e.target.value }))} />
+            </div>
+            <div className="flex justify-between items-center">
+              {empCfg.tieneCertificado && (
+                <button onClick={async () => { try { await api.put(`/facturacion/config-empresa/${empSel}`, { quitarCertificado: true }); toast.success('Certificado quitado'); setEmpCfg(c => ({ ...c, tieneCertificado: false })); } catch (e) { toast.error('Error al quitar'); } }}
+                  className="text-xs text-red-500 hover:underline">Quitar certificado propio</button>
+              )}
+              <button onClick={guardarEmpresa} disabled={savingEmp}
+                className="ml-auto px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {savingEmp ? 'Guardando...' : 'Guardar empresa'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -100,6 +188,20 @@ function EmitirModal({ empresas, initial, onClose, onCreated }) {
   const [loading, setLoading] = useState(false);
   const [buscandoPadron, setBuscandoPadron] = useState(false);
   const [proximo, setProximo] = useState(null);
+  const [originales, setOriginales] = useState([]);
+
+  // NC/ND: cargar facturas originales asociables (CbtesAsoc exigido por ARCA)
+  const esNota = [2, 3, 7, 8, 12, 13].includes(Number(form.tipoComprobante));
+  useEffect(() => {
+    if (esNota && form.empresaId) {
+      api.get(`/facturacion/originales?empresaId=${form.empresaId}&tipoNota=${form.tipoComprobante}`)
+        .then(r => setOriginales(r.data.data || []))
+        .catch(() => setOriginales([]));
+    } else {
+      setOriginales([]);
+      setForm(f => ({ ...f, comprobanteAsociadoId: '' }));
+    }
+  }, [esNota, form.empresaId, form.tipoComprobante]);
 
   // Consulta el padrón de ARCA por CUIT y autocompleta el receptor
   const buscarEnPadron = async () => {
@@ -183,6 +285,28 @@ function EmitirModal({ empresas, initial, onClose, onCreated }) {
         <div className="text-xs text-gray-500 bg-gray-50 px-3 py-2 rounded-lg">
           Próximo número: <strong>{String(proximo.proximo).padStart(8, '0')}</strong>
           {proximo.simulado && <span className="ml-2 text-amber-600">(modo simulado)</span>}
+        </div>
+      )}
+
+      {esNota && (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Comprobante original asociado <span className="text-red-500">*</span>
+            <span className="text-gray-400 font-normal ml-1">(exigido por ARCA para NC/ND)</span>
+          </label>
+          <select className="w-full border rounded-lg px-3 py-2 text-sm"
+            value={form.comprobanteAsociadoId || ''}
+            onChange={e => setForm(f => ({ ...f, comprobanteAsociadoId: e.target.value }))}>
+            <option value="">Seleccionar factura original...</option>
+            {originales.map(o => (
+              <option key={o.id} value={o.id}>
+                {String(o.ptoVta).padStart(4, '0')}-{String(o.nroComprobante).padStart(8, '0')} · {new Date(o.fechaEmision).toLocaleDateString('es-AR')} · {o.receptorRazonSocial || 'CF'} · {fmtARS(o.total)}
+              </option>
+            ))}
+          </select>
+          {form.empresaId && originales.length === 0 && (
+            <p className="text-xs text-amber-600 mt-1">No hay facturas emitidas de esa letra para asociar.</p>
+          )}
         </div>
       )}
 
@@ -604,7 +728,7 @@ export default function FacturacionElectronica() {
 
       {showConfig && (
         <Modal onClose={() => setShowConfig(false)} title="Configuración AFIP — Facturación Electrónica">
-          <ConfigModal onClose={() => { setShowConfig(false); cargar(); }} />
+          <ConfigModal empresas={empresas} onClose={() => { setShowConfig(false); cargar(); }} />
         </Modal>
       )}
 

@@ -117,6 +117,17 @@ async function emitirComprobante(config, datos) {
     payload.FchVtoPago = fch;
   }
 
+  // NC/ND deben referenciar el comprobante original (RG 4540)
+  if (datos.comprobanteAsociado) {
+    const a = datos.comprobanteAsociado;
+    payload.CbtesAsoc = [{
+      Tipo: Number(a.Tipo),
+      PtoVta: Number(a.PtoVta),
+      Nro: Number(a.Nro),
+      ...(a.Cuit ? { Cuit: String(a.Cuit).replace(/-/g, '') } : {}),
+    }];
+  }
+
   // Factura C (11/12/13) no discrimina IVA
   const esTipoC = [11, 12, 13].includes(cbteTipo);
   if (!esTipoC && datos.ivaAlicuotas?.length) {

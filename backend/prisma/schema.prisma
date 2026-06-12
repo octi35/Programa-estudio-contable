@@ -124,6 +124,12 @@ model Empresa {
   estudioId          String
   activa             Boolean   @default(true)
   fechaInicio        DateTime?
+  // Facturación multi-CUIT: si la empresa tiene certificado propio, emite con
+  // su CUIT; si no, se usa el del estudio (fallback).
+  condicionIVA       CondicionIVA?
+  afipPtoVta         Int       @default(1)
+  afipCertificado    String?
+  afipClavePrivada   String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -1205,12 +1211,16 @@ model ComprobanteElectronico {
   estado              String   @default("EMITIDO")
   simulado            Boolean  @default(false)
   observaciones       String?
+  // NC/ND: comprobante original al que se asocia (CbtesAsoc de ARCA)
+  comprobanteAsociadoId String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  empresa  Empresa                         @relation(fields: [empresaId], references: [id])
-  estudio  Estudio                         @relation(fields: [estudioId], references: [id])
-  detalles DetalleComprobanteElectronico[]
+  empresa             Empresa                         @relation(fields: [empresaId], references: [id])
+  estudio             Estudio                         @relation(fields: [estudioId], references: [id])
+  detalles            DetalleComprobanteElectronico[]
+  comprobanteAsociado ComprobanteElectronico?  @relation("NotasAsociadas", fields: [comprobanteAsociadoId], references: [id])
+  notasAsociadas      ComprobanteElectronico[] @relation("NotasAsociadas")
 
   @@index([empresaId, fechaEmision])
   @@index([estudioId, fechaEmision])

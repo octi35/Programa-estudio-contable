@@ -9,7 +9,11 @@ const multer = require('multer');
 const router = express.Router();
 const { auth, requireRol } = require('../middleware/auth');
 const emision = require('../services/afip/afipEmisionService');
-const { procesarColaFacturacion, configAfipDeEstudio } = require('../services/afip/afipColaService');
+const { procesarColaFacturacion, configAfipDeEstudio, configAfipDeEmpresa } = require('../services/afip/afipColaService');
+
+const TIPOS_NOTA = [2, 3, 7, 8, 12, 13]; // ND/NC A, B y C
+// Tipo de factura original que corresponde a cada nota
+const FACTURA_DE_NOTA = { 2: 1, 3: 1, 7: 6, 8: 6, 12: 11, 13: 11 };
 const pdfService = require('../services/pdfService');
 const { chatCompletion, habilitado: llmHabilitado, MODEL } = require('../services/ia/llmClient');
 
@@ -46,6 +50,70 @@ router.put('/config', auth, requireRol('ADMIN'), async (req, res, next) => {
     if (clavePrivada) data.afipClavePrivada = clavePrivada;
     const estudio = await prisma.estudio.update({ where: { id: req.usuario.estudioId }, data });
     res.json({ ok: true, ambiente: estudio.afipAmbiente, ptoVta: estudio.afipPtoVta });
+  } catch (err) { next(err); }
+});
+
+// GET /api/facturacion/config-empresa/:empresaId — config AFIP propia de la empresa (multi-CUIT)
+router.get('/config-empresa/:empresaId', auth, async (req, res, next) => {
+  try {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.empresaId, estudioId: req.usuario.estudioId },
+      select: { id: true, razonSocial: true, cuit: true, condicionIVA: true, afipPtoVta: true, afipCertificado: true, afipClavePrivada: true },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+    res.json({
+      empresaId: empresa.id,
+      razonSocial: empresa.razonSocial,
+      cuit: empresa.cuit,
+      condicionIVA: empresa.condicionIVA,
+      ptoVta: empresa.afipPtoVta || 1,
+      tieneCertificado: !!empresa.afipCertificado,
+      tieneClavePrivada: !!empresa.afipClavePrivada,
+    });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/facturacion/config-empresa/:empresaId
+router.put('/config-empresa/:empresaId', auth, requireRol('ADMIN'), async (req, res, next) => {
+  try {
+    const empresa = await prisma.empresa.findFirst({ where: { id: req.params.empresaId, estudioId: req.usuario.estudioId } });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const { ptoVta, certificado, clavePrivada, condicionIVA, quitarCertificado } = req.body;
+    const data = {};
+    if (ptoVta) data.afipPtoVta = Number(ptoVta);
+    if (certificado) data.afipCertificado = certificado;
+    if (clavePrivada) data.afipClavePrivada = clavePrivada;
+    if (condicionIVA) data.condicionIVA = condicionIVA;
+    if (quitarCertificado) { data.afipCertificado = null; data.afipClavePrivada = null; }
+
+    const actualizada = await prisma.empresa.update({ where: { id: empresa.id }, data });
+    res.json({ ok: true, tieneCertificado: !!actualizada.afipCertificado, ptoVta: actualizada.afipPtoVta });
+  } catch (err) { next(err); }
+});
+
+// GET /api/facturacion/originales?empresaId&tipoNota — facturas asociables a una NC/ND
+router.get('/originales', auth, async (req, res, next) => {
+  try {
+    const { empresaId, tipoNota } = req.query;
+    const tipoFactura = FACTURA_DE_NOTA[Number(tipoNota)];
+    if (!empresaId || !tipoFactura) return res.json({ data: [] });
+
+    const items = await prisma.comprobanteElectronico.findMany({
+      where: {
+        empresaId,
+        estudioId: req.usuario.estudioId,
+        tipoComprobante: tipoFactura,
+        estado: 'EMITIDO',
+      },
+      select: {
+        id: true, ptoVta: true, nroComprobante: true, fechaEmision: true,
+        receptorRazonSocial: true, total: true,
+      },
+      orderBy: { fechaEmision: 'desc' },
+      take: 50,
+    });
+    res.json({ data: items });
   } catch (err) { next(err); }
 });
 
@@ -103,6 +171,7 @@ async function emitirYGuardar(estudioId, body) {
     receptorCondicionIVA,
     tipoComprobante = 11, concepto = 1,
     items, observaciones, ptoVta: ptoVtaOverride,
+    comprobanteAsociadoId,
   } = body;
 
   if (!items?.length) throw Object.assign(new Error('items requerido'), { statusCode: 400 });
@@ -110,8 +179,28 @@ async function emitirYGuardar(estudioId, body) {
   const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, estudioId } });
   if (!empresa) throw Object.assign(new Error('Empresa no encontrada'), { statusCode: 404 });
 
-  const config = await configAfipDeEstudio(estudioId);
+  // Multi-CUIT: con certificado propio la empresa emite con su CUIT;
+  // sin certificado, fallback al CUIT/cert del estudio.
+  const config = await configAfipDeEmpresa(empresaId, estudioId);
   const ptoVta = Number(ptoVtaOverride || config.ptoVta);
+
+  // NC/ND: resolver el comprobante original (CbtesAsoc, RG 4540)
+  const esNota = TIPOS_NOTA.includes(Number(tipoComprobante));
+  let asociado = null;
+  if (esNota && comprobanteAsociadoId) {
+    asociado = await prisma.comprobanteElectronico.findFirst({
+      where: { id: comprobanteAsociadoId, estudioId },
+      select: { id: true, tipoComprobante: true, ptoVta: true, nroComprobante: true },
+    });
+    if (!asociado) throw Object.assign(new Error('Comprobante asociado no encontrado'), { statusCode: 404 });
+  }
+  const esSimuladoCfg = config.ambiente === 'SIMULADO' || (!config.certificado && !config.clavePrivada);
+  if (esNota && !asociado && !esSimuladoCfg) {
+    throw Object.assign(
+      new Error('Las notas de crédito/débito requieren el comprobante original asociado (exigido por ARCA)'),
+      { statusCode: 400 },
+    );
+  }
 
   // Calcular importes + discriminación por alícuota
   let neto = 0, iva = 0;
@@ -145,6 +234,9 @@ async function emitirYGuardar(estudioId, body) {
       neto, iva, total,
       ivaAlicuotas: Object.values(ivaMap),
       condicionIVAReceptor: receptorCondicionIVA,
+      comprobanteAsociado: asociado
+        ? { Tipo: asociado.tipoComprobante, PtoVta: asociado.ptoVta, Nro: asociado.nroComprobante, Cuit: config.cuit }
+        : null,
     });
   } catch (err) {
     if (!esSimulado && emision.esErrorConectividad(err)) {
@@ -176,6 +268,7 @@ async function emitirYGuardar(estudioId, body) {
       estado,
       simulado: caeData?.simulado || false,
       observaciones,
+      comprobanteAsociadoId: asociado?.id || null,
       detalles: { create: detalles.map((d, i) => ({ descripcion: d.descripcion, cantidad: Number(d.cantidad), precioUnit: Number(d.precioUnit), alicuotaIva: d.alicuotaIva ?? 21, subtotal: d.base, ivaImporte: d.ivaItem, orden: i + 1 })) },
     },
     include: { detalles: true, empresa: true },
