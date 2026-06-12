@@ -225,4 +225,25 @@ if (process.env.NODE_ENV !== 'test') {
   setInterval(tickEVentanilla, 60 * 60 * 1000);
 }
 
+// ── Cron cola de facturación electrónica ───────────────────────────────────
+// Cada 10 min reintenta los comprobantes que quedaron PENDIENTE_CAE porque
+// ARCA estaba caído al emitirlos (la factura "sale igual" y se autoriza después).
+const { procesarColaFacturacion } = require('./services/afip/afipColaService');
+
+async function tickColaFacturacion() {
+  try {
+    const r = await procesarColaFacturacion();
+    if (r.procesados > 0) {
+      logger.info(`[CronColaFacturacion] procesados=${r.procesados} emitidos=${r.emitidos} enCola=${r.enCola} rechazados=${r.rechazados}`);
+    }
+  } catch (err) {
+    logger.error?.(`[CronColaFacturacion] error: ${err.message}`) || console.error('[CronColaFacturacion]', err.message);
+  }
+}
+
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(tickColaFacturacion, 120 * 1000);
+  setInterval(tickColaFacturacion, 10 * 60 * 1000);
+}
+
 module.exports = app;

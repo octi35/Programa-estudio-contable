@@ -1,42 +1,21 @@
 /**
- * Facturación Electrónica AFIP — Facturas A/B/C, NC/ND
- * Integración WSFE (Web Service Facturación Electrónica)
+ * Facturación Electrónica AFIP/ARCA — Facturas A/B/C, NC/ND
+ * Emisión real via @afipsdk/afip.js (WSAA + WSFEv1), modo SIMULADO sin
+ * certificado, y cola offline con reintentos cuando ARCA está caído.
  */
 const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
 const { auth, requireRol } = require('../middleware/auth');
-const wsfe = require('../services/afipWsfeService');
+const emision = require('../services/afip/afipEmisionService');
+const { procesarColaFacturacion, configAfipDeEstudio } = require('../services/afip/afipColaService');
 const pdfService = require('../services/pdfService');
-const dayjs = require('dayjs');
-
 
 const TIPOS_COMPROBANTE = {
   1: 'Factura A', 2: 'Nota Débito A', 3: 'Nota Crédito A',
   6: 'Factura B', 7: 'Nota Débito B', 8: 'Nota Crédito B',
   11: 'Factura C', 12: 'Nota Débito C', 13: 'Nota Crédito C',
 };
-
-const ALICUOTAS_IVA = {
-  3: 0,       // Exento
-  4: 10.5,
-  5: 21,
-  6: 27,
-  8: 5,
-  9: 2.5,
-};
-
-async function getConfigAfip(estudioId) {
-  const estudio = await prisma.estudio.findUnique({ where: { id: estudioId } });
-  if (!estudio) throw new Error('Estudio no encontrado');
-  return {
-    cuit: estudio.cuit?.replace(/-/g, '') || '',
-    ambiente: estudio.afipAmbiente || 'HOMOLOGACION',
-    certificado: estudio.afipCertificado || null,
-    clavePrivada: estudio.afipClavePrivada || null,
-    ptoVta: estudio.afipPtoVta || 1,
-  };
-}
 
 // GET /api/facturacion/config
 router.get('/config', auth, async (req, res, next) => {
@@ -90,13 +69,34 @@ router.get('/comprobantes', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// GET /api/facturacion/cola — comprobantes esperando CAE (ARCA caído al emitir)
+router.get('/cola', auth, async (req, res, next) => {
+  try {
+    const items = await prisma.comprobanteElectronico.findMany({
+      where: { estudioId: req.usuario.estudioId, estado: 'PENDIENTE_CAE' },
+      include: { empresa: { select: { razonSocial: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json({ data: items, total: items.length });
+  } catch (err) { next(err); }
+});
+
+// POST /api/facturacion/cola/procesar — reintenta ahora los encolados
+router.post('/cola/procesar', auth, async (req, res, next) => {
+  try {
+    const resultado = await procesarColaFacturacion(req.usuario.estudioId);
+    res.json(resultado);
+  } catch (err) { next(err); }
+});
+
 // POST /api/facturacion/emitir
 router.post('/emitir', auth, async (req, res, next) => {
   try {
     const {
       empresaId, receptorCuit, receptorRazonSocial, receptorDomicilio,
+      receptorCondicionIVA,
       tipoComprobante = 11, concepto = 1,
-      items, // [{descripcion, cantidad, precioUnit, alicuotaIva: 5|21|27|0}]
+      items, // [{descripcion, cantidad, precioUnit, alicuotaIva: 21|10.5|27|0}]
       observaciones, ptoVta: ptoVtaOverride,
     } = req.body;
 
@@ -105,10 +105,10 @@ router.post('/emitir', auth, async (req, res, next) => {
     const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, estudioId: req.usuario.estudioId } });
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
 
-    const config = await getConfigAfip(req.usuario.estudioId);
-    const ptoVta = ptoVtaOverride || config.ptoVta;
+    const config = await configAfipDeEstudio(req.usuario.estudioId);
+    const ptoVta = Number(ptoVtaOverride || config.ptoVta);
 
-    // Calcular importes
+    // Calcular importes + discriminación por alícuota
     let neto = 0, iva = 0;
     const ivaMap = {};
     const detalles = items.map(it => {
@@ -118,63 +118,74 @@ router.post('/emitir', auth, async (req, res, next) => {
       neto += base;
       iva += ivaItem;
       const ivaId = { 0: 3, 2.5: 9, 5: 8, 10.5: 4, 21: 5, 27: 6 }[alicuota] || 5;
-      ivaMap[ivaId] = (ivaMap[ivaId] || { ivaId, baseImp: 0, importe: 0 });
-      ivaMap[ivaId].baseImp += base;
-      ivaMap[ivaId].importe += ivaItem;
+      ivaMap[ivaId] = (ivaMap[ivaId] || { Id: ivaId, BaseImp: 0, Importe: 0 });
+      ivaMap[ivaId].BaseImp += base;
+      ivaMap[ivaId].Importe += ivaItem;
       return { ...it, base, ivaItem };
     });
     const total = neto + iva;
 
-    // Obtener próximo número
-    let nroComprobante;
-    if (config.ambiente === 'SIMULADO' || (!config.certificado && !config.clavePrivada)) {
-      nroComprobante = await getNextNroSimulado(req.usuario.estudioId, empresaId, tipoComprobante, ptoVta);
-    } else {
-      const ultimo = await wsfe.obtenerUltimoComprobante(config, ptoVta, tipoComprobante);
-      nroComprobante = ultimo + 1;
-    }
-
-    // Solicitar CAE
-    let caeData;
     const esSimulado = config.ambiente === 'SIMULADO' || (!config.certificado && !config.clavePrivada);
-    if (esSimulado) {
-      caeData = await wsfe.emitirFacturaSimulada({ neto, iva, total });
-    } else {
-      caeData = await wsfe.solicitarCAE(config, {
-        ptoVta, tipoComprobante, concepto,
-        docTipo: 80, docNro: receptorCuit || '0',
-        nroComprobante,
-        neto, iva, total,
-        items: Object.values(ivaMap),
-      });
+
+    const datosEmision = {
+      ptoVta,
+      cbteTipo: Number(tipoComprobante),
+      concepto: Number(concepto),
+      docNro: receptorCuit || '0',
+      neto, iva, total,
+      ivaAlicuotas: Object.values(ivaMap),
+      condicionIVAReceptor: receptorCondicionIVA,
+    };
+
+    let caeData = null;
+    let estado = 'EMITIDO';
+    let encolado = false;
+
+    try {
+      caeData = await emision.emitirComprobante(config, datosEmision);
+    } catch (err) {
+      if (!esSimulado && emision.esErrorConectividad(err)) {
+        // ARCA caído: encolar — el cron lo emite cuando vuelva el servicio
+        estado = 'PENDIENTE_CAE';
+        encolado = true;
+      } else {
+        return res.status(422).json({ error: `ARCA rechazó la solicitud: ${err.message}` });
+      }
     }
 
-    // Guardar en BD
+    const nroComprobante = caeData?.nroComprobante
+      ?? (esSimulado ? await getNextNroSimulado(req.usuario.estudioId, Number(tipoComprobante), ptoVta) : 0);
+
     const comprobante = await prisma.comprobanteElectronico.create({
       data: {
         empresaId,
         estudioId: req.usuario.estudioId,
-        tipoComprobante,
+        tipoComprobante: Number(tipoComprobante),
         ptoVta,
         nroComprobante,
         fechaEmision: new Date(),
-        cae: caeData.cae,
-        caeFchVto: caeData.caeFchVto,
+        cae: caeData?.cae || null,
+        caeFchVto: caeData?.caeFchVto || null,
         receptorCuit: receptorCuit || '',
         receptorRazonSocial: receptorRazonSocial || '',
         receptorDomicilio: receptorDomicilio || '',
-        neto,
-        iva,
-        total,
-        estado: 'EMITIDO',
-        simulado: caeData.simulado || false,
+        neto, iva, total,
+        estado,
+        simulado: caeData?.simulado || false,
         observaciones,
         detalles: { create: detalles.map((d, i) => ({ descripcion: d.descripcion, cantidad: Number(d.cantidad), precioUnit: Number(d.precioUnit), alicuotaIva: d.alicuotaIva ?? 21, subtotal: d.base, ivaImporte: d.ivaItem, orden: i + 1 })) },
       },
       include: { detalles: true, empresa: true },
     });
 
-    res.status(201).json({ ...comprobante, tipoDescripcion: TIPOS_COMPROBANTE[tipoComprobante] });
+    res.status(encolado ? 202 : 201).json({
+      ...comprobante,
+      tipoDescripcion: TIPOS_COMPROBANTE[Number(tipoComprobante)],
+      encolado,
+      mensaje: encolado
+        ? 'ARCA no responde — el comprobante quedó en cola y se emitirá automáticamente cuando vuelva el servicio'
+        : undefined,
+    });
   } catch (err) { next(err); }
 });
 
@@ -199,18 +210,19 @@ router.get('/tipos-comprobante', auth, (req, res) => {
   res.json(Object.entries(TIPOS_COMPROBANTE).map(([id, nombre]) => ({ id: Number(id), nombre })));
 });
 
-// GET /api/facturacion/ultimo-nro?empresaId&tipoComprobante&ptoVta
+// GET /api/facturacion/ultimo-nro?tipoComprobante&ptoVta
 router.get('/ultimo-nro', auth, async (req, res, next) => {
   try {
-    const { tipoComprobante = 11, ptoVta = 1 } = req.query;
-    const config = await getConfigAfip(req.usuario.estudioId);
+    const { tipoComprobante = 11, ptoVta } = req.query;
+    const config = await configAfipDeEstudio(req.usuario.estudioId);
+    const pv = Number(ptoVta || config.ptoVta);
     const esSimulado = config.ambiente === 'SIMULADO' || (!config.certificado && !config.clavePrivada);
     let nro = 0;
     if (!esSimulado) {
-      nro = await wsfe.obtenerUltimoComprobante(config, Number(ptoVta), Number(tipoComprobante));
+      nro = await emision.ultimoAutorizado(config, pv, Number(tipoComprobante));
     } else {
       const ultimo = await prisma.comprobanteElectronico.findFirst({
-        where: { estudioId: req.usuario.estudioId, tipoComprobante: Number(tipoComprobante), ptoVta: Number(ptoVta) },
+        where: { estudioId: req.usuario.estudioId, tipoComprobante: Number(tipoComprobante), ptoVta: pv },
         orderBy: { nroComprobante: 'desc' },
       });
       nro = ultimo?.nroComprobante || 0;
@@ -219,7 +231,7 @@ router.get('/ultimo-nro', auth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-async function getNextNroSimulado(estudioId, empresaId, tipoComprobante, ptoVta) {
+async function getNextNroSimulado(estudioId, tipoComprobante, ptoVta) {
   const ultimo = await prisma.comprobanteElectronico.findFirst({
     where: { estudioId, tipoComprobante, ptoVta },
     orderBy: { nroComprobante: 'desc' },

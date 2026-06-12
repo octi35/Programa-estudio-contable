@@ -92,12 +92,37 @@ function ConfigModal({ onClose }) {
 function EmitirModal({ empresas, onClose, onCreated }) {
   const [form, setForm] = useState({
     empresaId: '', tipoComprobante: 6,
-    receptorRazonSocial: '', receptorCuit: '', receptorDomicilio: '',
+    receptorRazonSocial: '', receptorCuit: '', receptorDomicilio: '', receptorCondicionIVA: '',
     items: [{ descripcion: '', cantidad: 1, precioUnit: '', alicuotaIva: 21 }],
     observaciones: '',
   });
   const [loading, setLoading] = useState(false);
+  const [buscandoPadron, setBuscandoPadron] = useState(false);
   const [proximo, setProximo] = useState(null);
+
+  // Consulta el padrón de ARCA por CUIT y autocompleta el receptor
+  const buscarEnPadron = async () => {
+    const cuit = form.receptorCuit.replace(/[^\d]/g, '');
+    if (cuit.length !== 11) { toast.error('Ingresá un CUIT válido de 11 dígitos'); return; }
+    setBuscandoPadron(true);
+    try {
+      const r = await api.get(`/afip/padron/${cuit}`);
+      const d = r.data;
+      setForm(f => ({
+        ...f,
+        receptorRazonSocial: d.razonSocial || f.receptorRazonSocial,
+        receptorDomicilio: d.domicilio || f.receptorDomicilio,
+        receptorCondicionIVA: d.condicionIVA || f.receptorCondicionIVA,
+        // RI recibe Factura A; monotributista/CF/exento recibe B (si no es NC/ND ya elegida)
+        tipoComprobante: [1, 6].includes(f.tipoComprobante)
+          ? (d.condicionIVA === 'RESPONSABLE_INSCRIPTO' ? 1 : 6)
+          : f.tipoComprobante,
+      }));
+      toast.success(`Encontrado en ARCA: ${d.razonSocial}`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'No se pudo consultar el padrón de ARCA');
+    } finally { setBuscandoPadron(false); }
+  };
 
   useEffect(() => {
     if (form.empresaId && form.tipoComprobante) {
@@ -124,7 +149,11 @@ function EmitirModal({ empresas, onClose, onCreated }) {
         ...form,
         items: form.items.map(it => ({ ...it, cantidad: Number(it.cantidad), precioUnit: Number(it.precioUnit), alicuotaIva: Number(it.alicuotaIva) })),
       });
-      toast.success(`${res.data.tipoDescripcion} N° ${res.data.nroComprobante} emitida${res.data.simulado ? ' (SIMULADO)' : ''}`);
+      if (res.data.encolado) {
+        toast(res.data.mensaje || 'ARCA no responde — comprobante en cola, se emitirá automáticamente', { icon: '⏳', duration: 6000 });
+      } else {
+        toast.success(`${res.data.tipoDescripcion} N° ${res.data.nroComprobante} emitida${res.data.simulado ? ' (SIMULADO)' : ''}`);
+      }
       onCreated(res.data);
       onClose();
     } catch (e) { toast.error(e.response?.data?.error || 'Error al emitir'); }
@@ -159,13 +188,32 @@ function EmitirModal({ empresas, onClose, onCreated }) {
       <div className="border-t pt-3">
         <h3 className="text-xs font-semibold text-gray-700 mb-2">Receptor</h3>
         <div className="grid grid-cols-3 gap-2">
-          {[['receptorRazonSocial','Razón Social / Nombre'],['receptorCuit','CUIT/DNI'],['receptorDomicilio','Domicilio']].map(([k, l]) => (
-            <div key={k}>
-              <label className="block text-xs text-gray-500 mb-0.5">{l}</label>
-              <input className="w-full border rounded px-2 py-1.5 text-sm" value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} />
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">CUIT/DNI</label>
+            <div className="flex gap-1">
+              <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="20-12345678-9" value={form.receptorCuit} onChange={e => setForm(f => ({ ...f, receptorCuit: e.target.value }))} />
+              <button onClick={buscarEnPadron} disabled={buscandoPadron} title="Buscar en padrón ARCA"
+                className="px-2 border rounded bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:opacity-50 flex-shrink-0">
+                {buscandoPadron
+                  ? <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  : <MagnifyingGlassIcon className="w-4 h-4" />}
+              </button>
             </div>
-          ))}
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Razón Social / Nombre</label>
+            <input className="w-full border rounded px-2 py-1.5 text-sm" value={form.receptorRazonSocial} onChange={e => setForm(f => ({ ...f, receptorRazonSocial: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Domicilio</label>
+            <input className="w-full border rounded px-2 py-1.5 text-sm" value={form.receptorDomicilio} onChange={e => setForm(f => ({ ...f, receptorDomicilio: e.target.value }))} />
+          </div>
         </div>
+        {form.receptorCondicionIVA && (
+          <p className="text-xs text-gray-500 mt-1.5">
+            Condición IVA (padrón ARCA): <strong>{form.receptorCondicionIVA.replace(/_/g, ' ')}</strong>
+          </p>
+        )}
       </div>
 
       <div className="border-t pt-3">
@@ -227,6 +275,8 @@ export default function FacturacionElectronica() {
   const [comprobantes, setComprobantes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [config, setConfig] = useState(null);
+  const [cola, setCola] = useState([]);
+  const [procesandoCola, setProcesandoCola] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
   const [showEmitir, setShowEmitir] = useState(false);
@@ -240,14 +290,28 @@ export default function FacturacionElectronica() {
       api.get(`/facturacion/comprobantes?${params}`),
       api.get('/empresas'),
       api.get('/facturacion/config'),
-    ]).then(([comp, emp, cfg]) => {
+      api.get('/facturacion/cola'),
+    ]).then(([comp, emp, cfg, q]) => {
       setComprobantes(comp.data.data || []);
       setEmpresas(emp.data.data || emp.data || []);
       setConfig(cfg.data);
+      setCola(q.data.data || []);
     }).catch(() => {}).finally(() => setLoading(false));
   };
 
   useEffect(() => { cargar(); }, [filtro]);
+
+  const procesarCola = async () => {
+    setProcesandoCola(true);
+    try {
+      const r = await api.post('/facturacion/cola/procesar');
+      if (r.data.emitidos > 0) toast.success(`${r.data.emitidos} comprobante(s) emitido(s) con CAE`);
+      if (r.data.enCola > 0) toast(`ARCA sigue sin responder — ${r.data.enCola} comprobante(s) siguen en cola`, { icon: '⏳' });
+      if (r.data.rechazados > 0) toast.error(`${r.data.rechazados} comprobante(s) rechazado(s) por ARCA`);
+      cargar();
+    } catch (e) { toast.error(e.response?.data?.error || 'Error al procesar la cola'); }
+    finally { setProcesandoCola(false); }
+  };
 
   const descargarPDF = async (id, nro) => {
     try {
@@ -282,6 +346,27 @@ export default function FacturacionElectronica() {
           </button>
         </div>
       </div>
+
+      {/* Cola pendiente de CAE (ARCA caído al emitir) */}
+      {cola.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <ExclamationTriangleIcon className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-red-800">
+              <strong>{cola.length} comprobante{cola.length > 1 ? 's' : ''} en cola sin CAE</strong> — ARCA no respondió al emitirlos.
+              Se reintentan automáticamente cada 10 minutos.
+              <span className="block text-xs mt-1 text-red-600">
+                {cola.slice(0, 3).map(c => `${c.empresa?.razonSocial || ''} ${fmtARS(c.total)}`).join(' · ')}
+                {cola.length > 3 ? ` · y ${cola.length - 3} más` : ''}
+              </span>
+            </div>
+          </div>
+          <button onClick={procesarCola} disabled={procesandoCola}
+            className="px-3 py-1.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 flex-shrink-0">
+            {procesandoCola ? 'Reintentando...' : 'Reintentar ahora'}
+          </button>
+        </div>
+      )}
 
       {/* Info banner */}
       {config?.ambiente === 'SIMULADO' && (
@@ -349,7 +434,11 @@ export default function FacturacionElectronica() {
                       <td className="px-4 py-3 text-right font-mono">{fmtARS(comp.iva)}</td>
                       <td className="px-4 py-3 text-right font-mono font-bold">{fmtARS(comp.total)}</td>
                       <td className="px-4 py-3">
-                        {comp.simulado ? (
+                        {comp.estado === 'PENDIENTE_CAE' ? (
+                          <span className="text-xs text-red-600 font-medium">⏳ En cola</span>
+                        ) : comp.estado === 'RECHAZADO' ? (
+                          <span className="text-xs text-red-600 font-medium" title={comp.observaciones}>✗ Rechazado</span>
+                        ) : comp.simulado ? (
                           <span className="text-xs text-amber-600">Simulado</span>
                         ) : (
                           <span className="text-xs font-mono text-green-700 flex items-center gap-1">

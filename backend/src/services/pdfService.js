@@ -275,11 +275,17 @@ async function generarComprobanteElectronico(comp, tipoDesc) {
 
       // CAE info
       let y = 125;
-      doc.rect(x, y, w, 22).fillAndStroke('#fff3cd', '#ffc107');
-      doc.fillColor('#856404').fontSize(8).font('Helvetica-Bold')
-        .text(`CAE: ${comp.cae}`, x + 8, y + 7)
+      const enCola = comp.estado === 'PENDIENTE_CAE';
+      doc.rect(x, y, w, 22).fillAndStroke(enCola ? '#fde2e2' : '#fff3cd', enCola ? '#dc3545' : '#ffc107');
+      doc.fillColor(enCola ? '#842029' : '#856404').fontSize(8).font('Helvetica-Bold')
+        .text(`CAE: ${comp.cae || 'PENDIENTE'}`, x + 8, y + 7)
         .text(`Vto. CAE: ${comp.caeFchVto ? comp.caeFchVto.replace(/(\d{4})(\d{2})(\d{2})/, '$3/$2/$1') : '—'}`, x + 250, y + 7)
-        .text(comp.simulado ? '⚠ MODO SIMULADO — NO VÁLIDO ANTE AFIP' : '✓ CAE Válido AFIP', x + 370, y + 7);
+        .text(
+          enCola ? '⚠ EN COLA — AÚN SIN CAE (ARCA no disponible)'
+            : comp.simulado ? '⚠ MODO SIMULADO — NO VÁLIDO ANTE AFIP'
+            : '✓ CAE Válido AFIP',
+          x + 320, y + 7
+        );
 
       // Receptor
       y += 32;
@@ -327,12 +333,28 @@ async function generarComprobanteElectronico(comp, tipoDesc) {
       y += 4;
       totRow('TOTAL:', comp.total, true);
 
-      // QR
-      const qrData = `${comp.cae}|${comp.nroComprobante}|${comp.total}`;
-      try {
-        const qrBuf = await QRCode.toBuffer(qrData, { width: 80, margin: 1 });
-        doc.image(qrBuf, x, y + 10, { width: 70, height: 70 });
-      } catch (_) {}
+      // QR fiscal RG 4892 — escaneable desde la app de ARCA para validar el comprobante
+      if (comp.cae) {
+        try {
+          const { generarQRUrl } = require('./afip/afipEmisionService');
+          const docNro = String(comp.receptorCuit || '0').replace(/[^\d]/g, '') || '0';
+          const qrUrl = generarQRUrl({
+            fecha: comp.fechaEmision,
+            cuitEmisor: comp.empresa?.cuit || comp.empresa?.estudio?.cuit || '0',
+            ptoVta: comp.ptoVta,
+            cbteTipo: comp.tipoComprobante,
+            nroComprobante: comp.nroComprobante,
+            importe: comp.total,
+            docTipo: docNro.length === 11 ? 80 : 99,
+            docNro,
+            cae: comp.cae,
+          });
+          const qrBuf = await QRCode.toBuffer(qrUrl, { width: 90, margin: 1 });
+          doc.image(qrBuf, x, y + 10, { width: 80, height: 80 });
+          doc.fontSize(6.5).fillColor('#888')
+            .text('Verificable en afip.gob.ar/fe/qr', x, y + 92, { width: 100 });
+        } catch (_) {}
+      }
 
       // Footer
       doc.fontSize(7).fillColor('#aaa')
