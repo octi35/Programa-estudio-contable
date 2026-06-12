@@ -12,3 +12,4 @@ uploads/
 # Editores
 .vscode/
 .idea/
+.vercel

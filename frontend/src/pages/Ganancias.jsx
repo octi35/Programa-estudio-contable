@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import api from '../api/client';
 import { formatMoney, MESES } from '../utils/format';
 import toast from 'react-hot-toast';
-import { CalculatorIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { CalculatorIcon, CheckIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline';
 
 const ESCALA_GANANCIAS = [
   { desde: 0, hasta: 419447.06, tasa: 5, fijo: 0 },
@@ -80,6 +80,35 @@ export default function Ganancias() {
     }).catch(() => {});
   }, [empleadoId, anio]);
 
+  const [importandoSiradig, setImportandoSiradig] = useState(false);
+
+  const importarSiradig = async (files) => {
+    if (!files || files.length === 0) return;
+    setImportandoSiradig(true);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('archivos', f);
+      fd.append('anio', anio);
+      const { data } = await api.post('/ganancias/importar-siradig', fd);
+      if (data.importados.length > 0) {
+        toast.success(
+          `SIRADIG: ${data.importados.length} F.572 aplicado(s) — ${data.importados.map(i => i.empleado).join(', ')}`,
+          { duration: 7000 },
+        );
+        // refrescar la config en pantalla si el empleado seleccionado fue importado
+        if (empleadoId) {
+          const r = await api.get('/ganancias/config', { params: { empleadoId, anio } });
+          if (r.data) setConfig(c => ({ ...c, ...r.data }));
+        }
+      }
+      for (const e of data.errores) toast.error(`${e.archivo}: ${e.error}`, { duration: 7000 });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al importar SIRADIG');
+    } finally {
+      setImportandoSiradig(false);
+    }
+  };
+
   const handleGuardar = async () => {
     if (!empleadoId) { toast.error('Seleccione un empleado'); return; }
     setGuardando(true);
@@ -128,8 +157,15 @@ export default function Ganancias() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Ganancias 4a Categoria</h1>
+        <label className={`flex items-center gap-2 text-sm font-medium border border-gray-300 hover:bg-gray-50 text-gray-700 px-3 py-2 rounded-lg cursor-pointer ${importandoSiradig ? 'opacity-50 pointer-events-none' : ''}`}
+          title="Importá los XML del F.572 web que el empleador descarga de ARCA: las deducciones y cargas de familia se aplican solas">
+          <ArrowUpTrayIcon className="w-4 h-4" />
+          {importandoSiradig ? 'Importando...' : 'Importar F.572 (SIRADIG)'}
+          <input type="file" accept=".xml" multiple className="hidden"
+            onChange={e => { importarSiradig(e.target.files); e.target.value = ''; }} />
+        </label>
       </div>
 
       {/* Filtros */}

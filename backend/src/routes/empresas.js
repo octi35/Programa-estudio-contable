@@ -248,4 +248,31 @@ router.get('/:id/periodos', auth, [param('id').isUUID(), validate], async (req, 
   }
 });
 
+// POST /api/empresas/:id/portal-link — genera link del portal del cliente
+// para que la empresa cargue novedades del mes sin pasar por el estudio.
+router.post('/:id/portal-link', auth, [param('id').isUUID(), validate], async (req, res, next) => {
+  try {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.params.id, estudioId: req.usuario.estudioId },
+      select: { id: true, razonSocial: true },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { empresaId: empresa.id, scope: 'portal-cliente' },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    const base = process.env.FRONTEND_URL || 'http://localhost:5173';
+    res.json({
+      url: `${base}/portal-cliente?token=${token}`,
+      expiraEn: '30 días',
+      empresa: empresa.razonSocial,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;

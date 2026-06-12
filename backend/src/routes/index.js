@@ -34,6 +34,7 @@ const searchRoutes = require('./search');
 const webhooksRoutes = require('./webhooks');
 const contribucionesRoutes = require('./contribuciones');
 const portalRoutes = require('./portal');
+const portalClienteRoutes = require('./portalCliente');
 
 router.use('/auth', authRoutes);
 router.use('/empresas', empresasRoutes);
@@ -69,5 +70,6 @@ router.use('/search', searchRoutes);
 router.use('/webhooks', webhooksRoutes);
 router.use('/contribuciones', contribucionesRoutes);
 router.use('/portal', portalRoutes);
+router.use('/portal-cliente', portalClienteRoutes);
 
 module.exports = router;

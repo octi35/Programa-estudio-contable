@@ -297,4 +297,38 @@ router.post('/:id/movimientos/importar-excel', auth, [param('id').isUUID(), vali
   } catch (err) { next(err); }
 });
 
+// ── CONCILIACIÓN BANCARIA INTELIGENTE ────────────────────────────────────────
+
+// GET /api/bancos/:id/conciliacion — sugerencias de matcheo para los
+// movimientos sin conciliar (comprobantes IVA + facturas de honorarios).
+router.get('/:id/conciliacion', auth, [param('id').isUUID(), validate], async (req, res, next) => {
+  try {
+    const conciliacionService = require('../services/conciliacionService');
+    const r = await conciliacionService.sugerirConciliacion(req.usuario.estudioId, req.params.id);
+    res.json(r);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /api/bancos/:id/conciliacion/confirmar — confirma un match sugerido
+router.post('/:id/conciliacion/confirmar', auth, [
+  param('id').isUUID(),
+  body('movimientoId').isUUID(),
+  body('tipo').isIn(['COMPROBANTE', 'FACTURA_HONORARIOS']),
+  body('referenciaId').isUUID(),
+  validate,
+], async (req, res, next) => {
+  try {
+    const conciliacionService = require('../services/conciliacionService');
+    const { movimientoId, tipo, referenciaId } = req.body;
+    const r = await conciliacionService.confirmarConciliacion(req.usuario.estudioId, movimientoId, { tipo, referenciaId });
+    res.json(r);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
+});
+
 module.exports = router;

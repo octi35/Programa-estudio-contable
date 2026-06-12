@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { BuildingOfficeIcon, UsersIcon, ArrowLeftIcon, CalculatorIcon } from '@heroicons/react/24/outline';
+import { BuildingOfficeIcon, UsersIcon, ArrowLeftIcon, CalculatorIcon, LinkIcon } from '@heroicons/react/24/outline';
+import toast from 'react-hot-toast';
 import api from '../api/client';
 import { formatDate, mesNombre } from '../utils/format';
 
@@ -50,6 +51,18 @@ export default function EmpresaDetalle() {
           <h1 className="text-2xl font-bold text-gray-900">{empresa.razonSocial}</h1>
           <p className="text-gray-500 text-sm">CUIT: {empresa.cuit}</p>
         </div>
+        <button
+          onClick={async () => {
+            try {
+              const r = await api.post(`/empresas/${id}/portal-link`);
+              await navigator.clipboard.writeText(r.data.url);
+              toast.success(`Link del portal copiado (válido ${r.data.expiraEn}). Envíaselo al cliente para que cargue las novedades del mes.`, { duration: 6000 });
+            } catch (_) { /* interceptor */ }
+          }}
+          className="btn-secondary"
+          title="Genera un link de 30 días para que el cliente cargue novedades (horas extra, ausencias, premios) sin pasar por el estudio">
+          <LinkIcon className="w-4 h-4" /> Portal del cliente
+        </button>
         <button onClick={() => navigate(`/empleados?empresaId=${id}`)} className="btn-secondary">
           <UsersIcon className="w-4 h-4" /> Empleados
         </button>

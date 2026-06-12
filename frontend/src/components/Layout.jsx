@@ -64,6 +64,7 @@ const menuConfig = [
       { to: '/simulador-costo', label: 'Simulador de Costo' },
       { to: '/conceptos', label: 'Conceptos' },
       { to: '/convenios', label: 'Convenios (CCT)' },
+      { to: '/escalas', label: 'Escalas (Paritarias)' },
     ],
   },
   {
@@ -96,6 +97,7 @@ const menuConfig = [
   {
     label: 'Finanzas', icon: BuildingLibraryIcon, children: [
       { to: '/bancos', label: 'Cuentas Bancarias' },
+      { to: '/conciliacion', label: 'Conciliación Bancaria' },
       { to: '/cuentas-corrientes', label: 'Cuentas Corrientes' },
       { to: '/presupuesto', label: 'Presupuesto' },
       { to: '/tipos-cambio', label: 'Tipos de Cambio' },

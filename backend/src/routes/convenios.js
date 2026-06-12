@@ -1,9 +1,13 @@
 const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { body, param } = require('express-validator');
 const { auth, requireRol } = require('../middleware/auth');
 const validate = require('../middleware/validate');
+const escalasService = require('../services/sueldos/escalasService');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 
 // GET /api/convenios
@@ -175,6 +179,90 @@ router.post('/:id/paritaria', auth, requireRol('ADMIN', 'CONTADOR'), [
       tabla: nuevaTabla,
     });
   } catch (err) { next(err); }
+});
+
+// ── ESCALAS SALARIALES (PARITARIAS) ──────────────────────────────────────────
+
+// POST /api/convenios/:id/escalas/importar — sube Excel/CSV con la escala nueva
+// Columnas esperadas: categoria | basico | descripcion (opcional). Body: vigenciaDesde
+router.post('/:id/escalas/importar', auth, requireRol('ADMIN', 'CONTADOR'),
+  upload.single('archivo'),
+  [param('id').isUUID(), body('vigenciaDesde').isISO8601(), validate],
+  async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Archivo requerido (Excel o CSV)' });
+
+    let filas = [];
+    const nombre = (req.file.originalname || '').toLowerCase();
+    if (nombre.endsWith('.csv') || req.file.mimetype === 'text/csv') {
+      const texto = req.file.buffer.toString('utf8');
+      const lineas = texto.split(/\r?\n/).filter(l => l.trim());
+      const sep = lineas[0].includes(';') ? ';' : ',';
+      for (let i = 1; i < lineas.length; i++) {
+        const [categoria, basico, descripcion] = lineas[i].split(sep);
+        filas.push({ categoria, basico: String(basico || '').replace(/\./g, '').replace(',', '.'), descripcion });
+      }
+    } else {
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(req.file.buffer);
+      const ws = wb.worksheets[0];
+      ws.eachRow((row, idx) => {
+        if (idx === 1) return; // header
+        filas.push({
+          categoria: row.getCell(1).value,
+          basico: row.getCell(2).value,
+          descripcion: row.getCell(3).value ? String(row.getCell(3).value) : null,
+        });
+      });
+    }
+
+    const r = await escalasService.importarEscala(req.params.id, filas, req.body.vigenciaDesde);
+    res.status(201).json(r);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /api/convenios/:id/escalas/aplicar — actualiza el básico de todos los
+// empleados activos del convenio según la escala vigente. dryRun para preview.
+router.post('/:id/escalas/aplicar', auth, requireRol('ADMIN', 'CONTADOR'),
+  [param('id').isUUID(), body('dryRun').optional().isBoolean(), validate],
+  async (req, res, next) => {
+  try {
+    const r = await escalasService.aplicarEscala(req.usuario.estudioId, req.params.id, {
+      dryRun: req.body.dryRun === true,
+    });
+    res.json(r);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
+});
+
+// POST /api/convenios/:id/escalas/retroactivo — calcula (y opcionalmente crea
+// como novedades) el retroactivo de períodos liquidados con el básico viejo.
+router.post('/:id/escalas/retroactivo', auth, requireRol('ADMIN', 'CONTADOR'), [
+  param('id').isUUID(),
+  body('anioDesde').isInt({ min: 2000, max: 2099 }),
+  body('mesDesde').isInt({ min: 1, max: 12 }),
+  body('anioHasta').isInt({ min: 2000, max: 2099 }),
+  body('mesHasta').isInt({ min: 1, max: 12 }),
+  body('crear').optional().isBoolean(),
+  validate,
+], async (req, res, next) => {
+  try {
+    const { anioDesde, mesDesde, anioHasta, mesHasta, crear } = req.body;
+    const r = await escalasService.calcularRetroactivo(req.usuario.estudioId, req.params.id, {
+      anioDesde: +anioDesde, mesDesde: +mesDesde, anioHasta: +anioHasta, mesHasta: +mesHasta,
+      crear: crear === true,
+    });
+    res.json(r);
+  } catch (err) {
+    if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
+    next(err);
+  }
 });
 
 module.exports = router;

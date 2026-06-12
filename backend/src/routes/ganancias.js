@@ -1,9 +1,13 @@
 const prisma = require('../lib/prisma');
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { body, query } = require('express-validator');
 const { auth } = require('../middleware/auth');
 const validate = require('../middleware/validate');
+const siradigService = require('../services/sueldos/siradigService');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 
 // Parámetros Ganancias 4ª 2024 (actualizados por decreto)
@@ -151,6 +155,30 @@ router.post('/calcular', auth, [
         tasa: t.tasa,
       })),
     });
+  } catch (err) { next(err); }
+});
+
+// POST /api/ganancias/importar-siradig — sube uno o más XML de F.572 (SIRADIG)
+// y aplica deducciones + cargas de familia a GananciasEmpleado del año.
+router.post('/importar-siradig', auth, upload.array('archivos', 50), async (req, res, next) => {
+  try {
+    const archivos = req.files && req.files.length ? req.files : (req.file ? [req.file] : []);
+    if (archivos.length === 0) return res.status(400).json({ error: 'Subí al menos un XML de F.572' });
+
+    const anioOverride = req.body.anio ? Number(req.body.anio) : null;
+    const importados = [];
+    const errores = [];
+
+    for (const archivo of archivos) {
+      try {
+        const r = await siradigService.importarF572(req.usuario.estudioId, archivo.buffer, { anioOverride });
+        importados.push(r);
+      } catch (e) {
+        errores.push({ archivo: archivo.originalname, error: e.message });
+      }
+    }
+
+    res.json({ ok: true, importados, errores });
   } catch (err) { next(err); }
 });
 

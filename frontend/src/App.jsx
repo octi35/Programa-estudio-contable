@@ -63,6 +63,9 @@ import TiposCambio from './pages/TiposCambio';
 import ControlLiquidaciones from './pages/ControlLiquidaciones';
 import SimuladorCosto from './pages/SimuladorCosto';
 import PortalEmpleado from './pages/PortalEmpleado';
+import PortalCliente from './pages/PortalCliente';
+import EscalasSalariales from './pages/EscalasSalariales';
+import ConciliacionBancaria from './pages/ConciliacionBancaria';
 
 function PrivateRoute({ children }) {
   const { usuario, loading } = useAuth();
@@ -88,8 +91,9 @@ export default function App() {
           <Route path="/login" element={Safe(<Login />)} />
           <Route path="/forgot-password" element={Safe(<ForgotPassword />)} />
           <Route path="/reset-password" element={Safe(<ResetPassword />)} />
-          {/* Portal del empleado: público, autenticado por token firmado en la URL */}
+          {/* Portales públicos: autenticados por token firmado en la URL */}
           <Route path="/portal" element={Safe(<PortalEmpleado />)} />
+          <Route path="/portal-cliente" element={Safe(<PortalCliente />)} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={Safe(<Dashboard />)} />
@@ -132,6 +136,8 @@ export default function App() {
             <Route path="contribuciones" element={Safe(<Contribuciones />)} />
             <Route path="control-liquidaciones" element={Safe(<ControlLiquidaciones />)} />
             <Route path="simulador-costo" element={Safe(<SimuladorCosto />)} />
+            <Route path="escalas" element={Safe(<EscalasSalariales />)} />
+            <Route path="conciliacion" element={Safe(<ConciliacionBancaria />)} />
             <Route path="log-acciones" element={Safe(<LogAcciones />)} />
 
             {/* Impuestos */}
