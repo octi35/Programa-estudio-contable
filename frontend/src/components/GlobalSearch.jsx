@@ -1,7 +1,90 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MagnifyingGlassIcon, XMarkIcon, UserIcon, BuildingOfficeIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import {
+  MagnifyingGlassIcon, XMarkIcon, UserIcon, BuildingOfficeIcon, DocumentTextIcon,
+  CalculatorIcon, UsersIcon, ReceiptPercentIcon, BookOpenIcon, ListBulletIcon,
+  TagIcon, DocumentDuplicateIcon, BuildingLibraryIcon, BanknotesIcon, FolderIcon,
+  MapPinIcon, ChartBarIcon, UserGroupIcon, ArrowRightCircleIcon,
+} from '@heroicons/react/24/outline';
 import api from '../api/client';
+
+// Iconos por categoría de resultado del backend
+const GROUP_ICONS = {
+  empleados: UserIcon,
+  empresas: BuildingOfficeIcon,
+  liquidaciones: CalculatorIcon,
+  comprobantes: DocumentTextIcon,
+  proveedores: UsersIcon,
+  facturasHonorarios: ReceiptPercentIcon,
+  asientos: BookOpenIcon,
+  cuentasContables: ListBulletIcon,
+  conceptos: TagIcon,
+  convenios: DocumentDuplicateIcon,
+  cuentasBancarias: BuildingLibraryIcon,
+  movimientosBancarios: BanknotesIcon,
+  documentos: FolderIcon,
+  sucursales: MapPinIcon,
+  presupuestos: ChartBarIcon,
+  usuarios: UserGroupIcon,
+};
+
+// Todas las páginas del sistema, navegables desde el buscador
+const PAGINAS = [
+  { ruta: '/dashboard', titulo: 'Panel Principal', seccion: 'Inicio' },
+  { ruta: '/asistente', titulo: 'Asistente IA', seccion: 'Inicio' },
+  { ruta: '/empresas', titulo: 'Empresas', seccion: 'Sueldos' },
+  { ruta: '/empleados', titulo: 'Empleados', seccion: 'Sueldos' },
+  { ruta: '/ausentismos', titulo: 'Ausentismos', seccion: 'Sueldos' },
+  { ruta: '/liquidaciones', titulo: 'Liquidaciones', seccion: 'Sueldos' },
+  { ruta: '/control-liquidaciones', titulo: 'Control Pre-cierre', seccion: 'Sueldos' },
+  { ruta: '/liquidacion-final', titulo: 'Liquidación Final', seccion: 'Sueldos' },
+  { ruta: '/contribuciones', titulo: 'Contribuciones', seccion: 'Sueldos' },
+  { ruta: '/simulador-costo', titulo: 'Simulador de Costo', seccion: 'Sueldos' },
+  { ruta: '/conceptos', titulo: 'Conceptos', seccion: 'Sueldos' },
+  { ruta: '/convenios', titulo: 'Convenios (CCT)', seccion: 'Sueldos' },
+  { ruta: '/escalas', titulo: 'Escalas (Paritarias)', seccion: 'Sueldos' },
+  { ruta: '/iva/comprobantes', titulo: 'Comprobantes', seccion: 'IVA' },
+  { ruta: '/iva/libro', titulo: 'Libro IVA', seccion: 'IVA' },
+  { ruta: '/iva/proveedores', titulo: 'Proveedores/Clientes', seccion: 'IVA' },
+  { ruta: '/iva/posicion', titulo: 'Posición IVA', seccion: 'IVA' },
+  { ruta: '/contabilidad/ejercicios', titulo: 'Ejercicios', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/asientos', titulo: 'Asientos', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/cuentas', titulo: 'Plan de Cuentas', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/mayor', titulo: 'Mayor', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/balance', titulo: 'Balance Sumas y Saldos', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/estado-resultados', titulo: 'Estado de Resultados', seccion: 'Contabilidad' },
+  { ruta: '/contabilidad/balance-general', titulo: 'Balance General', seccion: 'Contabilidad' },
+  { ruta: '/vencimientos', titulo: 'Agenda Vencimientos', seccion: 'Impuestos' },
+  { ruta: '/iibb', titulo: 'Ingresos Brutos', seccion: 'Impuestos' },
+  { ruta: '/ganancias', titulo: 'Ganancias 4ª Cat.', seccion: 'Impuestos' },
+  { ruta: '/monotributo', titulo: 'Monotributo', seccion: 'Impuestos' },
+  { ruta: '/bancos', titulo: 'Cuentas Bancarias', seccion: 'Finanzas' },
+  { ruta: '/conciliacion', titulo: 'Conciliación Bancaria', seccion: 'Finanzas' },
+  { ruta: '/cuentas-corrientes', titulo: 'Cuentas Corrientes', seccion: 'Finanzas' },
+  { ruta: '/presupuesto', titulo: 'Presupuesto', seccion: 'Finanzas' },
+  { ruta: '/tipos-cambio', titulo: 'Tipos de Cambio', seccion: 'Finanzas' },
+  { ruta: '/facturacion-electronica', titulo: 'Facturación Electrónica', seccion: 'Facturación' },
+  { ruta: '/honorarios', titulo: 'Honorarios', seccion: 'Estudio' },
+  { ruta: '/certificados', titulo: 'Certificados Laborales', seccion: 'Estudio' },
+  { ruta: '/importar-novedades', titulo: 'Importar Novedades', seccion: 'Herramientas' },
+  { ruta: '/log-acciones', titulo: 'Log de Acciones', seccion: 'Herramientas' },
+  { ruta: '/parametros', titulo: 'Parámetros Fiscales', seccion: 'Configuración' },
+  { ruta: '/sucursales', titulo: 'Sucursales', seccion: 'Configuración' },
+  { ruta: '/perfil-estudio', titulo: 'Perfil del Estudio', seccion: 'Configuración' },
+  { ruta: '/usuarios', titulo: 'Usuarios', seccion: 'Configuración' },
+  { ruta: '/admin', titulo: 'Administración', seccion: 'Configuración' },
+];
+
+// Normaliza para comparar sin acentos ni mayúsculas ("liquidacion" matchea "Liquidación")
+const normalizar = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+function buscarPaginas(q) {
+  const nq = normalizar(q);
+  return PAGINAS
+    .filter(p => normalizar(p.titulo).includes(nq) || normalizar(p.seccion).includes(nq))
+    .slice(0, 5)
+    .map(p => ({ id: p.ruta, titulo: p.titulo, subtitulo: `Ir a ${p.seccion} → ${p.titulo}`, ruta: p.ruta }));
+}
 
 export default function GlobalSearch({ open, onClose }) {
   const [query, setQuery] = useState('');
@@ -43,14 +126,15 @@ export default function GlobalSearch({ open, onClose }) {
     return () => clearTimeout(t);
   }, [query, open]);
 
+  // Grupos a renderizar: páginas (cliente) + entidades (backend)
+  const paginas = query.trim().length >= 2 ? buscarPaginas(query.trim()) : [];
+  const grupos = [
+    ...(paginas.length ? [{ key: 'paginas', label: 'Páginas', items: paginas }] : []),
+    ...(results?.grupos || []),
+  ];
+
   // Aplanar resultados para navegación con teclado
-  const allItems = results
-    ? [
-        ...results.empleados.map(i => ({ ...i, _grupo: 'Empleado', _icon: UserIcon })),
-        ...results.empresas.map(i => ({ ...i, _grupo: 'Empresa', _icon: BuildingOfficeIcon })),
-        ...results.comprobantes.map(i => ({ ...i, _grupo: 'Comprobante IVA', _icon: DocumentTextIcon })),
-      ]
-    : [];
+  const allItems = grupos.flatMap(g => g.items);
 
   const handleKeyDown = (e) => {
     if (e.key === 'Escape') { onClose(); return; }
@@ -78,19 +162,21 @@ export default function GlobalSearch({ open, onClose }) {
   );
 
   let runningIdx = -1;
-  const renderGroup = (items, label, Icon) => {
-    if (!items?.length) return null;
+  const renderGroup = (grupo) => {
+    if (!grupo.items?.length) return null;
+    const Icon = grupo.key === 'paginas' ? ArrowRightCircleIcon : (GROUP_ICONS[grupo.key] || DocumentTextIcon);
     return (
-      <>
-        {groupTitle(label, items.length)}
-        {items.map(it => {
+      <React.Fragment key={grupo.key}>
+        {groupTitle(grupo.label, grupo.items.length)}
+        {grupo.items.map(it => {
           runningIdx++;
-          const isActive = runningIdx === activeIdx;
+          const idx = runningIdx;
+          const isActive = idx === activeIdx;
           return (
             <button
-              key={`${label}-${it.id}`}
+              key={`${grupo.key}-${it.id}`}
               onClick={() => goToItem(it)}
-              onMouseEnter={() => setActiveIdx(runningIdx)}
+              onMouseEnter={() => setActiveIdx(idx)}
               className={`w-full text-left flex items-center gap-3 px-3 py-2.5 border-b border-gray-50 transition-colors ${
                 isActive ? 'bg-blue-50' : 'hover:bg-gray-50'
               }`}>
@@ -103,7 +189,7 @@ export default function GlobalSearch({ open, onClose }) {
             </button>
           );
         })}
-      </>
+      </React.Fragment>
     );
   };
 
@@ -119,7 +205,7 @@ export default function GlobalSearch({ open, onClose }) {
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Buscar empleados, empresas, comprobantes..."
+              placeholder="Buscar en todo el sistema: empleados, liquidaciones, asientos, páginas..."
               className="flex-1 outline-none text-sm bg-transparent"
             />
             {loading && <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
@@ -136,19 +222,13 @@ export default function GlobalSearch({ open, onClose }) {
               </div>
             )}
 
-            {query.trim().length >= 2 && results && allItems.length === 0 && !loading && (
+            {query.trim().length >= 2 && allItems.length === 0 && !loading && (
               <div className="px-4 py-8 text-center text-gray-400 text-sm">
                 Sin resultados para "<strong>{query}</strong>"
               </div>
             )}
 
-            {results && (
-              <>
-                {renderGroup(results.empleados, 'Empleados', UserIcon)}
-                {renderGroup(results.empresas, 'Empresas', BuildingOfficeIcon)}
-                {renderGroup(results.comprobantes, 'Comprobantes IVA', DocumentTextIcon)}
-              </>
-            )}
+            {grupos.map(renderGroup)}
           </div>
 
           <div className="border-t border-gray-100 px-3 py-1.5 flex items-center justify-between bg-gray-50 text-xs text-gray-400">
