@@ -24,3 +24,5 @@ services:
         sync: false # URL del frontend en Vercel, ej: https://estudio-contable.vercel.app
       - key: UPLOAD_DIR
         value: ./uploads
+      - key: GROQ_API_KEY
+        sync: false # gratis en console.groq.com — habilita el asistente IA y el OCR de comprobantes
