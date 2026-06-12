@@ -89,12 +89,13 @@ function ConfigModal({ onClose }) {
   );
 }
 
-function EmitirModal({ empresas, onClose, onCreated }) {
+function EmitirModal({ empresas, initial, onClose, onCreated }) {
   const [form, setForm] = useState({
     empresaId: '', tipoComprobante: 6,
     receptorRazonSocial: '', receptorCuit: '', receptorDomicilio: '', receptorCondicionIVA: '',
     items: [{ descripcion: '', cantidad: 1, precioUnit: '', alicuotaIva: 21 }],
     observaciones: '',
+    ...(initial || {}),
   });
   const [loading, setLoading] = useState(false);
   const [buscandoPadron, setBuscandoPadron] = useState(false);
@@ -271,6 +272,69 @@ function EmitirModal({ empresas, onClose, onCreated }) {
   );
 }
 
+// Importación masiva: un comprobante por fila del Excel/CSV
+function ImportarModal({ empresas, onClose, onDone }) {
+  const [empresaId, setEmpresaId] = useState('');
+  const [archivo, setArchivo] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  const importar = async () => {
+    if (!empresaId) { toast.error('Seleccioná la empresa emisora'); return; }
+    if (!archivo) { toast.error('Seleccioná un archivo Excel o CSV'); return; }
+    setSubiendo(true);
+    try {
+      const fd = new FormData();
+      fd.append('archivo', archivo);
+      fd.append('empresaId', empresaId);
+      const r = await api.post('/facturacion/importar', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setResultado(r.data);
+      if (r.data.emitidos > 0) toast.success(`${r.data.emitidos} comprobante(s) emitido(s)`);
+      if (r.data.encolados > 0) toast(`${r.data.encolados} en cola (ARCA sin responder)`, { icon: '⏳' });
+      onDone();
+    } catch (e) { toast.error(e.response?.data?.error || 'Error al importar'); }
+    finally { setSubiendo(false); }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+        <strong>Formato esperado</strong> (primera fila = encabezados, una factura por fila):<br />
+        <code className="block mt-1 bg-white rounded px-2 py-1 font-mono">cuit | razonSocial | tipo (A/B/C) | descripcion | cantidad | precioUnit | alicuotaIva</code>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Empresa emisora</label>
+        <select className="w-full border rounded-lg px-3 py-2 text-sm" value={empresaId} onChange={e => setEmpresaId(e.target.value)}>
+          <option value="">Seleccionar...</option>
+          {empresas.map(e => <option key={e.id} value={e.id}>{e.razonSocial}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Archivo (.xlsx o .csv — máx. 200 filas)</label>
+        <input type="file" accept=".xlsx,.csv" className="w-full text-sm"
+          onChange={e => setArchivo(e.target.files?.[0] || null)} />
+      </div>
+
+      {resultado && (
+        <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+          <p><strong>{resultado.emitidos}</strong> emitidos · <strong>{resultado.encolados}</strong> en cola · <strong>{resultado.errores.length}</strong> con error (de {resultado.total})</p>
+          {resultado.errores.slice(0, 5).map((e, i) => (
+            <p key={i} className="text-xs text-red-600">Fila {e.fila}: {e.error}</p>
+          ))}
+          {resultado.errores.length > 5 && <p className="text-xs text-gray-500">…y {resultado.errores.length - 5} errores más</p>}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-3 pt-2 border-t">
+        <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Cerrar</button>
+        <button onClick={importar} disabled={subiendo} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          {subiendo ? 'Importando...' : 'Importar y emitir'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function FacturacionElectronica() {
   const [comprobantes, setComprobantes] = useState([]);
   const [empresas, setEmpresas] = useState([]);
@@ -280,6 +344,11 @@ export default function FacturacionElectronica() {
   const [loading, setLoading] = useState(true);
   const [showConfig, setShowConfig] = useState(false);
   const [showEmitir, setShowEmitir] = useState(false);
+  const [showImportar, setShowImportar] = useState(false);
+  const [borrador, setBorrador] = useState(null);
+  const [frase, setFrase] = useState('');
+  const [interpretando, setInterpretando] = useState(false);
+  const [grabando, setGrabando] = useState(false);
   const [filtro, setFiltro] = useState({ empresaId: '', tipo: '' });
 
   const cargar = () => {
@@ -300,6 +369,53 @@ export default function FacturacionElectronica() {
   };
 
   useEffect(() => { cargar(); }, [filtro]);
+
+  // Interpreta la frase con IA y abre el formulario precargado
+  const interpretarFrase = async (texto) => {
+    const t = (texto ?? frase).trim();
+    if (t.length < 5) { toast.error('Contame qué querés facturar, ej: "50 mil de honorarios de mayo a 30-98765432-1"'); return; }
+    setInterpretando(true);
+    try {
+      const r = await api.post('/facturacion/interpretar', { texto: t });
+      const d = r.data;
+      setBorrador({
+        empresaId: empresas[0]?.id || '',
+        tipoComprobante: d.tipoComprobante || 6,
+        receptorCuit: d.cuit || '',
+        receptorRazonSocial: d.razonSocial || '',
+        items: d.items.map(it => ({
+          descripcion: it.descripcion || 'Servicio',
+          cantidad: Number(it.cantidad) || 1,
+          precioUnit: Number(it.precioUnit) || '',
+          alicuotaIva: it.alicuotaIva === undefined ? 21 : Number(it.alicuotaIva),
+        })),
+        observaciones: d.observaciones || '',
+      });
+      setShowEmitir(true);
+      setFrase('');
+    } catch (e) { toast.error(e.response?.data?.error || 'No pude interpretar la frase'); }
+    finally { setInterpretando(false); }
+  };
+
+  // Dictado por voz (Web Speech API, es-AR) — estilo "nota de voz" de Facturitas
+  const dictar = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast.error('Tu navegador no soporta dictado por voz (probá Chrome)'); return; }
+    const rec = new SR();
+    rec.lang = 'es-AR';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    setGrabando(true);
+    rec.onresult = (ev) => {
+      const texto = ev.results[0][0].transcript;
+      setFrase(texto);
+      setGrabando(false);
+      interpretarFrase(texto);
+    };
+    rec.onerror = () => { setGrabando(false); toast.error('No se pudo captar el audio'); };
+    rec.onend = () => setGrabando(false);
+    rec.start();
+  };
 
   const procesarCola = async () => {
     setProcesandoCola(true);
@@ -341,8 +457,33 @@ export default function FacturacionElectronica() {
           <button onClick={() => setShowConfig(true)} className="btn-secondary flex items-center gap-1.5 text-sm">
             <CogIcon className="w-4 h-4" /> Configuración AFIP
           </button>
-          <button onClick={() => setShowEmitir(true)} className="btn-primary flex items-center gap-1.5 text-sm">
+          <button onClick={() => setShowImportar(true)} className="btn-secondary flex items-center gap-1.5 text-sm">
+            <ArrowDownTrayIcon className="w-4 h-4 rotate-180" /> Importar Excel/CSV
+          </button>
+          <button onClick={() => { setBorrador(null); setShowEmitir(true); }} className="btn-primary flex items-center gap-1.5 text-sm">
             <PlusIcon className="w-4 h-4" /> Emitir comprobante
+          </button>
+        </div>
+      </div>
+
+      {/* Factura rápida por frase o voz (IA) */}
+      <div className="card p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-100">
+        <label className="block text-xs font-semibold text-blue-900 mb-1.5">⚡ Factura rápida — escribí o dictá qué querés facturar</label>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-sm bg-white"
+            placeholder='Ej: "Facturale 150 mil más IVA de honorarios de mayo a 30-98765432-1"'
+            value={frase}
+            onChange={e => setFrase(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && interpretarFrase()}
+          />
+          <button onClick={dictar} disabled={grabando || interpretando} title="Dictar por voz"
+            className={`px-3 border rounded-lg text-sm flex-shrink-0 ${grabando ? 'bg-red-100 border-red-300 text-red-600 animate-pulse' : 'bg-white border-blue-200 text-blue-600 hover:bg-blue-50'}`}>
+            {grabando ? '● Grabando…' : '🎤'}
+          </button>
+          <button onClick={() => interpretarFrase()} disabled={interpretando}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex-shrink-0">
+            {interpretando ? 'Interpretando…' : 'Generar factura'}
           </button>
         </div>
       </div>
@@ -468,8 +609,14 @@ export default function FacturacionElectronica() {
       )}
 
       {showEmitir && (
-        <Modal onClose={() => setShowEmitir(false)} title="Emitir Comprobante Electrónico">
-          <EmitirModal empresas={empresas} onClose={() => setShowEmitir(false)} onCreated={() => cargar()} />
+        <Modal onClose={() => { setShowEmitir(false); setBorrador(null); }} title="Emitir Comprobante Electrónico">
+          <EmitirModal empresas={empresas} initial={borrador} onClose={() => { setShowEmitir(false); setBorrador(null); }} onCreated={() => cargar()} />
+        </Modal>
+      )}
+
+      {showImportar && (
+        <Modal onClose={() => setShowImportar(false)} title="Importación Masiva de Facturas (Excel/CSV)">
+          <ImportarModal empresas={empresas} onClose={() => setShowImportar(false)} onDone={() => cargar()} />
         </Modal>
       )}
     </div>
