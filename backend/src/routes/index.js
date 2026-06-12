@@ -35,6 +35,7 @@ const webhooksRoutes = require('./webhooks');
 const contribucionesRoutes = require('./contribuciones');
 const portalRoutes = require('./portal');
 const portalClienteRoutes = require('./portalCliente');
+const asistenteRoutes = require('./asistente');
 
 router.use('/auth', authRoutes);
 router.use('/empresas', empresasRoutes);
@@ -71,5 +72,6 @@ router.use('/webhooks', webhooksRoutes);
 router.use('/contribuciones', contribucionesRoutes);
 router.use('/portal', portalRoutes);
 router.use('/portal-cliente', portalClienteRoutes);
+router.use('/asistente', asistenteRoutes);
 
 module.exports = router;

@@ -29,14 +29,12 @@ export default function EmpresaDetalle() {
   if (!empresa) return <p className="text-gray-500">Empresa no encontrada</p>;
 
   const descargar = async (tipo, anio, mes) => {
-    const endpoint = tipo === 'lsd'
-      ? `/documentos/lsd/${id}/${anio}/${mes}`
-      : `/documentos/f931/${id}/${anio}/${mes}`;
-    const resp = await api.get(endpoint, { responseType: 'blob' });
+    const resp = await api.get(`/documentos/${tipo}/${id}/${anio}/${mes}`, { responseType: 'blob' });
     const url = URL.createObjectURL(resp.data);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${tipo.toUpperCase()}_${empresa.cuit.replace(/-/g, '')}_${anio}${String(mes).padStart(2, '0')}.${tipo === 'lsd' ? 'xlsx' : 'txt'}`;
+    const prefijo = tipo === 'lsd-txt' ? 'LSD' : tipo.toUpperCase();
+    a.download = `${prefijo}_${empresa.cuit.replace(/-/g, '')}_${anio}${String(mes).padStart(2, '0')}.${tipo === 'lsd' ? 'xlsx' : 'txt'}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -175,6 +173,8 @@ export default function EmpresaDetalle() {
                   <td className="px-5 py-3 text-center flex gap-2 justify-center">
                     <button onClick={() => descargar('lsd', p.anio, p.mes)}
                       className="text-xs btn-secondary py-1 px-2">LSD Excel</button>
+                    <button onClick={() => descargar('lsd-txt', p.anio, p.mes)} title="TXT para importar en Libro de Sueldos Digital de ARCA"
+                      className="text-xs btn-secondary py-1 px-2">LSD TXT</button>
                     <button onClick={() => descargar('f931', p.anio, p.mes)}
                       className="text-xs btn-secondary py-1 px-2">F.931</button>
                   </td>

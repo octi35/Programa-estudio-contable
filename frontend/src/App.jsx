@@ -62,6 +62,7 @@ import TiposCambio from './pages/TiposCambio';
 // Pages nuevas - Automatización y portal
 import ControlLiquidaciones from './pages/ControlLiquidaciones';
 import SimuladorCosto from './pages/SimuladorCosto';
+import AsistenteIA from './pages/AsistenteIA';
 import PortalEmpleado from './pages/PortalEmpleado';
 import PortalCliente from './pages/PortalCliente';
 import EscalasSalariales from './pages/EscalasSalariales';
@@ -97,6 +98,7 @@ export default function App() {
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={Safe(<Dashboard />)} />
+            <Route path="asistente" element={Safe(<AsistenteIA />)} />
 
             {/* Empresas y empleados */}
             <Route path="empresas" element={Safe(<Empresas />)} />

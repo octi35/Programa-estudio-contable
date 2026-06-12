@@ -5,18 +5,22 @@
 // para que el frontend muestre el formulario vacío sin romper.
 //
 // Providers soportados:
+//   - 'llama':     visión de Llama vía Groq u otra API compatible (default si
+//                  hay LLM_API_KEY/GROQ_API_KEY — tier gratuito en console.groq.com)
 //   - 'aws':       AWS Textract (requiere @aws-sdk/client-textract + credenciales)
 //   - 'tesseract': tesseract.js local (requiere instalar la dependencia)
-//   - 'manual':    no extrae nada (default)
+//   - 'manual':    no extrae nada (default sin API key)
 //
 // Para activar OCR real:
-//   1) AWS: instalar @aws-sdk/client-textract, setear OCR_PROVIDER=aws +
+//   1) Llama: setear LLM_API_KEY o GROQ_API_KEY (gratis en console.groq.com)
+//   2) AWS: instalar @aws-sdk/client-textract, setear OCR_PROVIDER=aws +
 //      AWS_REGION + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY
-//   2) Tesseract: instalar tesseract.js, setear OCR_PROVIDER=tesseract
+//   3) Tesseract: instalar tesseract.js, setear OCR_PROVIDER=tesseract
 
 const logger = require('../utils/logger');
 
-const PROVIDER = (process.env.OCR_PROVIDER || 'manual').toLowerCase();
+const PROVIDER = (process.env.OCR_PROVIDER
+  || ((process.env.LLM_API_KEY || process.env.GROQ_API_KEY) ? 'llama' : 'manual')).toLowerCase();
 
 /**
  * Extrae campos del comprobante de un buffer (PDF o imagen).
@@ -25,12 +29,96 @@ const PROVIDER = (process.env.OCR_PROVIDER || 'manual').toLowerCase();
  */
 async function extraerDatosComprobante(buffer, opts = {}) {
   switch (PROVIDER) {
+    case 'llama':     return extraerConLlama(buffer, opts).catch(fallbackManual);
     case 'aws':       return extraerConAws(buffer, opts).catch(fallbackManual);
     case 'tesseract': return extraerConTesseract(buffer, opts).catch(fallbackManual);
     case 'manual':
     default:
       return fallbackManual(new Error('OCR_PROVIDER no configurado'));
   }
+}
+
+// ── Provider: Llama (visión, vía Groq u otra API compatible) ───────────────
+// Foto de la factura → JSON estructurado listo para el formulario.
+// Usa json_object mode para forzar JSON válido. Solo imágenes (JPG/PNG/WebP);
+// para PDF, el usuario puede subir una captura o usar carga manual.
+
+const CAMPOS_PROMPT = `{
+  "tipo_movimiento": "COMPRA si es factura recibida de un proveedor, VENTA si es emitida, o null",
+  "tipo_comprobante": "FACTURA_A | FACTURA_B | FACTURA_C | NOTA_CREDITO_A | NOTA_CREDITO_B | NOTA_CREDITO_C | NOTA_DEBITO_A | NOTA_DEBITO_B | NOTA_DEBITO_C | null",
+  "fecha": "fecha de emisión YYYY-MM-DD o null",
+  "pto_venta": "punto de venta como entero (los primeros 4-5 dígitos del número, ej 0003 → 3) o null",
+  "numero": "número del comprobante como entero (los 8 dígitos después del guión) o null",
+  "cuit": "CUIT del emisor, solo 11 dígitos sin guiones, como string, o null",
+  "razon_social": "razón social del emisor o null",
+  "neto_21": "neto gravado al 21% como número o null",
+  "neto_105": "neto gravado al 10.5% como número o null",
+  "neto_27": "neto gravado al 27% como número o null",
+  "exento": "número o null",
+  "no_gravado": "número o null",
+  "iva_21": "número o null",
+  "iva_105": "número o null",
+  "iva_27": "número o null",
+  "percep_iva": "percepciones de IVA, número o null",
+  "percep_iibb": "percepciones de IIBB, número o null",
+  "total": "número o null",
+  "confianza": "alta | media | baja según legibilidad"
+}`;
+
+async function extraerConLlama(buffer, opts) {
+  const { chatCompletion, habilitado, VISION_MODEL } = require('./ia/llmClient');
+  if (!habilitado()) throw new Error('LLM_API_KEY / GROQ_API_KEY no configurada');
+
+  const mimeType = opts.mimeType || 'image/jpeg';
+  const esPdf = mimeType === 'application/pdf' || (opts.filename || '').toLowerCase().endsWith('.pdf');
+  if (esPdf) {
+    // Los modelos de visión de Groq aceptan imágenes, no PDFs
+    return {
+      requiereManual: true,
+      provider: 'llama',
+      confianza: 0,
+      mensaje: 'El OCR con Llama procesa imágenes (JPG/PNG). Subí una foto o captura del comprobante.',
+      datos: {},
+    };
+  }
+
+  const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+
+  const data = await chatCompletion({
+    model: VISION_MODEL,
+    max_tokens: 1024,
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: dataUrl } },
+        {
+          type: 'text',
+          text: 'Sos un contador argentino cargando este comprobante al libro IVA. ' +
+            'Extraé los datos fiscales y devolvé SOLO un JSON con exactamente esta estructura:\n' +
+            CAMPOS_PROMPT +
+            '\nLos importes usan formato argentino (punto de miles, coma decimal): convertilos a número. ' +
+            'Si un campo no aparece o no es legible, devolvé null. La letra del comprobante (A/B/C) suele estar en un recuadro arriba al centro. ' +
+            'En facturas B y C el IVA no está discriminado: dejá los netos e IVA en null y completá solo el total.',
+        },
+      ],
+    }],
+  });
+
+  const texto = data.choices?.[0]?.message?.content;
+  if (!texto) throw new Error('Respuesta sin contenido');
+  const { confianza, ...datos } = JSON.parse(texto);
+
+  // Quitar nulls para que el form solo pre-llene lo detectado
+  const limpios = Object.fromEntries(Object.entries(datos).filter(([, v]) => v != null));
+
+  return {
+    requiereManual: Object.keys(limpios).length === 0,
+    provider: 'llama',
+    confianza: confianza || 'media',
+    datos: normalizarCampos(limpios),
+  };
 }
 
 function fallbackManual(err) {

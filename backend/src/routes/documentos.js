@@ -94,6 +94,49 @@ router.get('/lsd/:empresaId/:anio/:mes', auth, async (req, res, next) => {
   }
 });
 
+// GET /api/documentos/lsd-txt/:empresaId/:anio/:mes
+// TXT de importación del Libro de Sueldos Digital (ARCA), Guía N.º 15.
+// Query: tipo (default MENSUAL), fechaPago (YYYY-MM-DD, default fin de mes), nroLiq.
+router.get('/lsd-txt/:empresaId/:anio/:mes', auth, async (req, res, next) => {
+  try {
+    const { empresaId, anio, mes } = req.params;
+    const tipo = req.query.tipo || 'MENSUAL';
+
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: empresaId, estudioId: req.usuario.estudioId },
+    });
+    if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
+
+    const liquidaciones = await prisma.liquidacion.findMany({
+      where: {
+        periodo: { empresaId, anio: Number(anio), mes: Number(mes), tipo },
+        estado: { in: ['CALCULADO', 'CONFIRMADO'] },
+      },
+      include: {
+        empleado: { include: { familiares: true } },
+        detalles: { include: { concepto: true }, orderBy: { orden: 'asc' } },
+      },
+      orderBy: { empleado: { apellido: 'asc' } },
+    });
+
+    if (liquidaciones.length === 0) {
+      return res.status(404).json({ error: `No hay liquidaciones ${tipo} para este período` });
+    }
+
+    const { contenido } = lsdService.generarLsdTxt(empresa, liquidaciones, Number(anio), Number(mes), {
+      fechaPago: req.query.fechaPago,
+      nroLiq: req.query.nroLiq ? Number(req.query.nroLiq) : 1,
+    });
+    const filename = `LSD_${empresa.cuit.replace(/-/g, '')}_${anio}${String(mes).padStart(2, '0')}.txt`;
+
+    res.setHeader('Content-Type', 'text/plain; charset=windows-1252');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(contenido, 'latin1')); // ANSI según especificación
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/documentos/f931/:empresaId/:anio/:mes
 router.get('/f931/:empresaId/:anio/:mes', auth, async (req, res, next) => {
   try {
