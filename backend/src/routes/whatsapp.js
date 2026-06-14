@@ -21,6 +21,9 @@ const logger = require('../utils/logger');
 const evolution = require('../services/whatsapp/evolutionClient');
 const botService = require('../services/whatsapp/botService');
 
+// Último QR recibido por instancia (Evolution lo emite por evento, no síncrono).
+const qrStore = new Map(); // instance -> { base64, ts }
+
 // ── Helpers de extracción del payload de Evolution ──────────────────────────
 
 /** Normaliza el/los mensajes entrantes de un webhook de Evolution. */
@@ -87,7 +90,23 @@ async function manejarWebhook(req, res) {
       return;
     }
 
-    const { instance: instanceBody, mensajes } = extraerMensajes(req.body);
+    const body = req.body || {};
+    const evento = String(body.event || '').toLowerCase().replace(/_/g, '.');
+    const instanceRaw = req.params.instance || body.instance || evolution.DEFAULT_INSTANCE;
+
+    // Capturar el QR cuando Evolution lo emite (evento qrcode.updated).
+    if (evento === 'qrcode.updated' || body.data?.qrcode) {
+      const b64 = body.data?.qrcode?.base64 || body.data?.base64;
+      if (b64) qrStore.set(instanceRaw, { base64: b64, ts: Date.now() });
+      return;
+    }
+    // Al conectarse, el QR ya no sirve.
+    if (evento === 'connection.update' && body.data?.state === 'open') {
+      qrStore.delete(instanceRaw);
+      return;
+    }
+
+    const { instance: instanceBody, mensajes } = extraerMensajes(body);
     const instance = req.params.instance || instanceBody || evolution.DEFAULT_INSTANCE;
     if (!mensajes.length) return;
 
@@ -201,8 +220,15 @@ router.post('/conectar', auth, requireRol('ADMIN', 'CONTADOR'), async (req, res)
 router.get('/qr', auth, async (req, res) => {
   try {
     const estudio = await prisma.estudio.findUnique({ where: { id: req.usuario.estudioId } });
-    const qr = await evolution.obtenerQR(instanciaDe(estudio));
-    res.json({ ok: true, qr: qr?.qrcode || qr?.base64 || qr });
+    const instance = instanciaDe(estudio);
+    // Pedir connect (dispara generación del QR) y, si no viene síncrono,
+    // usar el último capturado por el webhook (evento qrcode.updated).
+    let qr;
+    try { qr = await evolution.obtenerQR(instance); } catch (_) { qr = null; }
+    const sincrono = qr?.base64 || qr?.qrcode;
+    const capturado = qrStore.get(instance);
+    const base64 = (typeof sincrono === 'string' && sincrono) || capturado?.base64 || null;
+    res.json({ ok: true, qr: base64 ? { base64 } : qr, capturadoHace: capturado ? Date.now() - capturado.ts : null });
   } catch (e) {
     res.status(e.statusCode || 500).json({ error: e.message });
   }

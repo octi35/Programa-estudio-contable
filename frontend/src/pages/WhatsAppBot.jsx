@@ -49,6 +49,23 @@ export default function WhatsAppBot() {
     return () => clearInterval(t);
   }, [estado?.conexion]);
 
+  // Mientras no esté conectado, pollear el QR en vivo (Evolution lo renueva cada ~20s).
+  useEffect(() => {
+    if (!estado?.habilitado) return;
+    if (estado.conexion === 'open') { setQr(null); return; }
+    let activo = true;
+    const traer = async () => {
+      try {
+        const r = await api.get('/whatsapp/qr');
+        const img = normalizarQR(r.data.qr);
+        if (activo && img) setQr(img);
+      } catch { /* silencioso */ }
+    };
+    traer();
+    const t = setInterval(traer, 6000);
+    return () => { activo = false; clearInterval(t); };
+  }, [estado?.conexion, estado?.habilitado]);
+
   const conectar = async () => {
     setCargando(true); setMsg('');
     try {

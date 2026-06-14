@@ -116,7 +116,7 @@ async function crearInstancia(instance = DEFAULT_INSTANCE, webhookUrl = null) {
       url: webhookUrl,
       byEvents: false,
       base64: true,
-      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
     };
   }
   return request('POST', '/instance/create', body);
@@ -140,7 +140,7 @@ async function configurarWebhook(instance = DEFAULT_INSTANCE, url) {
       url,
       byEvents: false,
       base64: true,
-      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
     },
   });
 }

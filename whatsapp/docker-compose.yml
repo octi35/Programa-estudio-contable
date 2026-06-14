@@ -17,7 +17,7 @@
 
 services:
   evolution-api:
-    image: atendai/evolution-api:v2.1.1
+    image: atendai/evolution-api:latest
     container_name: evolution-api
     restart: always
     ports:
@@ -29,6 +29,9 @@ services:
       # Servidor
       - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
       - LANGUAGE=es
+      # Versión de WhatsApp Web que presenta Baileys. Si queda vieja, WhatsApp
+      # rechaza la conexión (loop "connecting" sin QR). Actualizar si deja de parear.
+      - CONFIG_SESSION_PHONE_VERSION=${WA_PHONE_VERSION:-2.3000.1041442250}
       # Base de datos (Postgres) — Evolution v2 persiste instancias y mensajes
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
