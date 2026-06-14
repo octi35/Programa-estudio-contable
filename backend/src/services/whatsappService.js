@@ -1,12 +1,20 @@
 /**
  * Servicio de envío de WhatsApp.
  *
- * Soporta 3 providers via adapter pattern. Se elige con `WHATSAPP_PROVIDER`:
+ * Soporta 4 providers via adapter pattern. Se elige con `WHATSAPP_PROVIDER`:
+ *   - 'evolution': Evolution API self-hosted (Baileys) — menor riesgo de baneo,
+ *                  número real, gratis. Recomendado para empezar.
  *   - 'twilio': API de Twilio (Sandbox para dev, número aprobado para prod)
  *   - 'meta':   Meta Cloud API directa (requiere número verificado)
  *   - 'mock':   default — loguea el mensaje sin enviar nada (útil para dev)
  *
  * No agrega dependencias npm: usa fetch nativo (Node 18+).
+ *
+ * Para Evolution API:
+ *   WHATSAPP_PROVIDER=evolution
+ *   EVOLUTION_API_URL=http://localhost:8080
+ *   EVOLUTION_API_KEY=...
+ *   EVOLUTION_INSTANCE=estudio
  *
  * Para Twilio:
  *   WHATSAPP_PROVIDER=twilio
@@ -53,11 +61,36 @@ async function enviarMensaje(opts) {
   if (!tel) throw new Error('Teléfono inválido');
 
   switch (PROVIDER) {
+    case 'evolution': return enviarConEvolution(tel, opts);
     case 'twilio': return enviarConTwilio(tel, opts);
     case 'meta':   return enviarConMeta(tel, opts);
     case 'mock':
     default:       return enviarMock(tel, opts);
   }
+}
+
+// ── Evolution API provider ──────────────────────────────────────────────────
+async function enviarConEvolution(telefono, opts) {
+  const evolution = require('./whatsapp/evolutionClient');
+  const instance = opts.instance || evolution.DEFAULT_INSTANCE;
+
+  // Si hay PDF (buffer o URL), enviar como documento; el caption lleva el texto.
+  if (opts.pdfBuffer || opts.pdfUrl) {
+    const media = opts.pdfBuffer
+      ? Buffer.from(opts.pdfBuffer).toString('base64')
+      : opts.pdfUrl;
+    const r = await evolution.enviarMedia(telefono, {
+      media,
+      fileName: opts.pdfNombre || 'documento.pdf',
+      caption: opts.mensaje,
+      mimetype: 'application/pdf',
+      mediatype: 'document',
+    }, instance);
+    return { ok: true, providerId: r?.key?.id, provider: 'evolution' };
+  }
+
+  const r = await evolution.enviarTexto(telefono, opts.mensaje, instance);
+  return { ok: true, providerId: r?.key?.id, provider: 'evolution' };
 }
 
 // ── Mock provider (default) ────────────────────────────────────────────────

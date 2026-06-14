@@ -1,0 +1,96 @@
+# Stack de WhatsApp para el estudio contable: Evolution API + n8n.
+#
+# Evolution API (gateway de WhatsApp vía Baileys) usa un número real escaneando
+# un QR, lo que reduce mucho el riesgo de baneo vs. APIs no oficiales. n8n queda
+# disponible como capa de orquestación visual (opcional: el backend ya puede
+# manejar el webhook solo).
+#
+# Uso:
+#   1) cp .env.example .env  y completá las claves
+#   2) docker compose up -d
+#   3) Evolution queda en http://localhost:8080  ·  n8n en http://localhost:5678
+#
+# En producción poné esto detrás de un dominio con HTTPS (Caddy/Nginx) o usá
+# servicios gestionados (Railway/Hetzner). WhatsApp NO conecta a webhooks http
+# públicos sin TLS de forma confiable; para el QR/conexión no hace falta, pero
+# el webhook entrante hacia tu backend sí debe ser https público.
+
+services:
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: evolution-api
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Auth global de la API (la misma que pones en EVOLUTION_API_KEY del backend)
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
+      - AUTHENTICATION_TYPE=apikey
+      # Servidor
+      - SERVER_URL=${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      - LANGUAGE=es
+      # Base de datos (Postgres) — Evolution v2 persiste instancias y mensajes
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${POSTGRES_PASSWORD:-evolution}@evolution-postgres:5432/evolution?schema=public
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      - DATABASE_SAVE_MESSAGE_UPDATE=false
+      - DATABASE_SAVE_DATA_CONTACTS=true
+      - DATABASE_SAVE_DATA_CHATS=true
+      # Cache (Redis)
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evolution-redis:6379/0
+      - CACHE_REDIS_PREFIX_KEY=evolution
+      - CACHE_LOCAL_ENABLED=false
+      # Webhook global (opcional: si lo seteás acá, todas las instancias lo usan).
+      # Dejalo vacío y configurá el webhook por instancia desde el backend
+      # (POST /api/whatsapp/conectar lo hace automáticamente).
+      - WEBHOOK_GLOBAL_ENABLED=false
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  evolution-postgres:
+    image: postgres:16-alpine
+    container_name: evolution-postgres
+    restart: always
+    environment:
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-evolution}
+      - POSTGRES_DB=evolution
+    volumes:
+      - evolution_pgdata:/var/lib/postgresql/data
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: evolution-redis
+    restart: always
+    volumes:
+      - evolution_redis:/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=America/Argentina/Buenos_Aires
+      - N8N_SECURE_COOKIE=false
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  evolution_instances:
+  evolution_pgdata:
+  evolution_redis:
+  n8n_data:

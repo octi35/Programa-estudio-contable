@@ -1,0 +1,159 @@
+{
+  "name": "WhatsApp Estudio Contable (Evolution + Backend)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-estudio",
+        "options": {}
+      },
+      "id": "webhook-evolution",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-360, 300],
+      "webhookId": "whatsapp-estudio"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "a1", "name": "backendUrl", "value": "https://estudio-contable-api.onrender.com", "type": "string" },
+            { "id": "a2", "name": "evolutionUrl", "value": "http://evolution-api:8080", "type": "string" },
+            { "id": "a3", "name": "evolutionKey", "value": "REEMPLAZAR_AUTHENTICATION_API_KEY", "type": "string" },
+            { "id": "a4", "name": "webhookToken", "value": "", "type": "string" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-160, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza el payload messages.upsert de Evolution API.\n// Devuelve un item por cada mensaje de texto entrante (ignora salientes y grupos).\nconst b = $json.body || $json;\nconst evento = String(b.event || '').toLowerCase().replace(/_/g, '.');\nif (evento && evento !== 'messages.upsert') return [];\nconst datos = Array.isArray(b.data) ? b.data : [b.data].filter(Boolean);\nconst out = [];\nfor (const d of datos) {\n  if (!d || !d.key || d.key.fromMe) continue;\n  const jid = d.key.remoteJid || '';\n  if (jid.endsWith('@g.us')) continue;\n  const texto = (d.message && (d.message.conversation\n    || (d.message.extendedTextMessage && d.message.extendedTextMessage.text)\n    || (d.message.imageMessage && d.message.imageMessage.caption))) || '';\n  if (!texto) continue;\n  out.push({ json: { instance: b.instance, telefono: jid.replace(/@.*/, ''), texto, pushName: d.pushName || '' } });\n}\nreturn out;"
+      },
+      "id": "parsear",
+      "name": "Parsear mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [40, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"Config\"].json.backendUrl }}/api/whatsapp/procesar",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-token", "value": "={{ $node[\"Config\"].json.webhookToken }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ instance: $json.instance, telefono: $json.telefono, texto: $json.texto, pushName: $json.pushName }) }}",
+        "options": {}
+      },
+      "id": "procesar-backend",
+      "name": "Procesar en backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Expande la lista de replies del backend: un item por respuesta a enviar.\nconst replies = $json.replies || [];\nconst telefono = $json.telefono;\nconst instance = $json.instance;\nreturn replies.map((r) => ({ json: { ...r, telefono, instance } }));"
+      },
+      "id": "expandir",
+      "name": "Expandir replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "version": 2 },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.tipo }}",
+              "rightValue": "media",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "es-media",
+      "name": "¿Es PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"Config\"].json.evolutionUrl }}/message/sendMedia/{{ $json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $node[\"Config\"].json.evolutionKey }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.telefono, mediatype: 'document', mimetype: $json.mimetype || 'application/pdf', media: $json.media, fileName: $json.fileName, caption: $json.caption }) }}",
+        "options": {}
+      },
+      "id": "send-media",
+      "name": "Evolution sendMedia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node[\"Config\"].json.evolutionUrl }}/message/sendText/{{ $json.instance }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $node[\"Config\"].json.evolutionKey }}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.telefono, text: $json.texto }) }}",
+        "options": {}
+      },
+      "id": "send-text",
+      "name": "Evolution sendText",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Evolution": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Parsear mensaje", "type": "main", "index": 0 }]] },
+    "Parsear mensaje": { "main": [[{ "node": "Procesar en backend", "type": "main", "index": 0 }]] },
+    "Procesar en backend": { "main": [[{ "node": "Expandir replies", "type": "main", "index": 0 }]] },
+    "Expandir replies": { "main": [[{ "node": "¿Es PDF?", "type": "main", "index": 0 }]] },
+    "¿Es PDF?": {
+      "main": [
+        [{ "node": "Evolution sendMedia", "type": "main", "index": 0 }],
+        [{ "node": "Evolution sendText", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "active": false,
+  "pinData": {},
+  "meta": { "templatecredsSetupCompleted": true }
+}

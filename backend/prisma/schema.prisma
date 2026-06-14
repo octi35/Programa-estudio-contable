@@ -49,6 +49,11 @@ model Estudio {
   afipClavePrivada String?
   // Webhook bancario: secreto HMAC para validar payloads entrantes
   webhookSecret    String?
+  // WhatsApp (Evolution API): nombre de la instancia y número conectado
+  waInstance       String?
+  waNumero         String?
+  // Números autorizados a operar el bot (facturar), separados por coma
+  waOperadores     String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -58,8 +63,31 @@ model Estudio {
   comprobantesElect     ComprobanteElectronico[]
   categoriasMonotributo MonotributoCategoria[]
   tiposContribucion     TipoContribucion[]
+  sesionesWhatsapp      SesionWhatsapp[]
 
   @@map("estudios")
+}
+
+// ─── SESIONES DE WHATSAPP (máquina de estados del bot) ───────────────────────
+// Guarda el estado conversacional de cada teléfono que escribe al bot, scoped
+// por estudio. El bot es stateless entre requests: el estado vive acá.
+model SesionWhatsapp {
+  id         String   @id @default(uuid())
+  estudioId  String
+  telefono   String   // sólo dígitos, formato internacional sin +
+  rol        String   @default("DESCONOCIDO") // EMPLEADO | OPERADOR | DESCONOCIDO
+  estado     String   @default("INICIO")
+  contexto   Json     @default("{}")
+  empleadoId String?  // si el teléfono matchea un legajo
+  pushName   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  estudio Estudio @relation(fields: [estudioId], references: [id], onDelete: Cascade)
+
+  @@unique([estudioId, telefono])
+  @@index([telefono])
+  @@map("sesiones_whatsapp")
 }
 
 // ─── CONVENIOS COLECTIVOS ─────────────────────────────────────────────────────

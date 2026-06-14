@@ -36,6 +36,8 @@ const contribucionesRoutes = require('./contribuciones');
 const portalRoutes = require('./portal');
 const portalClienteRoutes = require('./portalCliente');
 const asistenteRoutes = require('./asistente');
+const whatsappRoutes = require('./whatsapp');
+const afipRoutes = require('./afip');
 
 router.use('/auth', authRoutes);
 router.use('/empresas', empresasRoutes);
@@ -73,5 +75,7 @@ router.use('/contribuciones', contribucionesRoutes);
 router.use('/portal', portalRoutes);
 router.use('/portal-cliente', portalClienteRoutes);
 router.use('/asistente', asistenteRoutes);
+router.use('/whatsapp', whatsappRoutes);
+router.use('/afip', afipRoutes);
 
 module.exports = router;

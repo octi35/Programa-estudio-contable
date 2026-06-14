@@ -10,7 +10,7 @@ import {
   BanknotesIcon, BookOpenIcon, ScaleIcon, AdjustmentsHorizontalIcon,
   WrenchScrewdriverIcon, ClipboardDocumentCheckIcon, KeyIcon,
   CalendarDaysIcon, CurrencyDollarIcon, BuildingLibraryIcon, ReceiptPercentIcon,
-  MagnifyingGlassIcon, SparklesIcon,
+  MagnifyingGlassIcon, SparklesIcon, ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 import Modal from './Modal';
 import GlobalSearch from './GlobalSearch';
@@ -53,6 +53,7 @@ function CambiarPasswordModal({ onClose }) {
 const menuConfig = [
   { to: '/dashboard', icon: HomeIcon, label: 'Panel Principal' },
   { to: '/asistente', icon: SparklesIcon, label: 'Asistente IA' },
+  { to: '/whatsapp', icon: ChatBubbleLeftRightIcon, label: 'Bot WhatsApp' },
   {
     label: 'Sueldos', icon: CalculatorIcon, children: [
       { to: '/empresas', label: 'Empresas' },

@@ -63,6 +63,7 @@ import TiposCambio from './pages/TiposCambio';
 import ControlLiquidaciones from './pages/ControlLiquidaciones';
 import SimuladorCosto from './pages/SimuladorCosto';
 import AsistenteIA from './pages/AsistenteIA';
+import WhatsAppBot from './pages/WhatsAppBot';
 import PortalEmpleado from './pages/PortalEmpleado';
 import PortalCliente from './pages/PortalCliente';
 import EscalasSalariales from './pages/EscalasSalariales';
@@ -99,6 +100,7 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={Safe(<Dashboard />)} />
             <Route path="asistente" element={Safe(<AsistenteIA />)} />
+            <Route path="whatsapp" element={Safe(<WhatsAppBot />)} />
 
             {/* Empresas y empleados */}
             <Route path="empresas" element={Safe(<Empresas />)} />
