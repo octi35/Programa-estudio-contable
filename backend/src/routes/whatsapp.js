@@ -24,6 +24,28 @@ const botService = require('../services/whatsapp/botService');
 // Último QR recibido por instancia (Evolution lo emite por evento, no síncrono).
 const qrStore = new Map(); // instance -> { base64, ts }
 
+// ── Anti-ban: parámetros de comportamiento humano ────────────────────────────
+const ANTIFLOOD = new Map(); // telefono -> [timestamps] de mensajes recientes
+const ANTIFLOOD_MAX = 8;       // máx. mensajes entrantes procesados por ventana
+const ANTIFLOOD_VENTANA = 15000; // ventana de 15 s
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const jitter = (min, max) => Math.floor(min + Math.random() * (max - min));
+
+/** Demora de "tipeo" realista: ~45ms por caracter, mínimo 1s, máximo 5s. */
+function demoraTipeo(texto) {
+  const base = Math.min(5000, Math.max(1000, String(texto || '').length * 45));
+  return base + jitter(0, 600);
+}
+
+/** Limita ráfagas del mismo número (defensa anti-flood y anti-baneo). */
+function permitido(telefono) {
+  const ahora = Date.now();
+  const previos = (ANTIFLOOD.get(telefono) || []).filter((t) => ahora - t < ANTIFLOOD_VENTANA);
+  previos.push(ahora);
+  ANTIFLOOD.set(telefono, previos);
+  return previos.length <= ANTIFLOOD_MAX;
+}
+
 // ── Helpers de extracción del payload de Evolution ──────────────────────────
 
 /** Normaliza el/los mensajes entrantes de un webhook de Evolution. */
@@ -35,9 +57,14 @@ function extraerMensajes(body) {
   const datos = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean);
   const mensajes = [];
   for (const d of datos) {
-    if (!d?.key || d.key.fromMe) continue;                  // ignorar salientes
+    if (!d?.key || d.key.fromMe) continue;                  // ignorar salientes (anti-loop)
     const jid = d.key.remoteJid || '';
-    if (jid.endsWith('@g.us')) continue;                    // ignorar grupos
+    // Anti-ban: responder SOLO a chats individuales. Ignorar grupos, listas de
+    // difusión, estados y canales/newsletters — responder ahí es señal de spam.
+    if (jid.endsWith('@g.us')) continue;                    // grupos
+    if (jid.endsWith('@broadcast')) continue;               // difusión / estados
+    if (jid.endsWith('@newsletter')) continue;              // canales
+    if (jid === 'status@broadcast') continue;
     const texto =
       d.message?.conversation ||
       d.message?.extendedTextMessage?.text ||
@@ -50,16 +77,24 @@ function extraerMensajes(body) {
       texto,
       pushName: d.pushName || null,
       tipo: d.messageType || (texto ? 'texto' : 'otro'),
+      key: d.key, // para marcar como leído
     });
   }
   return { instance, evento: 'messages.upsert', mensajes };
 }
 
-/** Envía una lista de respuestas del bot por Evolution, con pausa humana. */
+/**
+ * Envía las respuestas del bot por Evolution imitando comportamiento humano
+ * (anti-baneo): muestra "escribiendo…", espera una demora proporcional al
+ * largo del texto, y pausa entre mensajes consecutivos.
+ */
 async function enviarReplies(telefono, replies, instance) {
-  for (const r of replies) {
+  for (let i = 0; i < replies.length; i++) {
+    const r = replies[i];
     try {
-      await evolution.presencia(telefono, instance);
+      const espera = r.tipo === 'media' ? jitter(1200, 2200) : demoraTipeo(r.texto);
+      await evolution.presencia(telefono, instance, 'composing', Math.min(espera, 3000));
+      await sleep(espera);
       if (r.tipo === 'media') {
         await evolution.enviarMedia(telefono, {
           media: r.media,
@@ -71,6 +106,8 @@ async function enviarReplies(telefono, replies, instance) {
       } else {
         await evolution.enviarTexto(telefono, r.texto, instance);
       }
+      // Pausa entre mensajes seguidos para no parecer un bot ametralladora.
+      if (i < replies.length - 1) await sleep(jitter(700, 1400));
     } catch (e) {
       logger.error?.(`[whatsapp] error enviando reply a ${telefono}: ${e.message}`);
     }
@@ -118,6 +155,14 @@ async function manejarWebhook(req, res) {
 
     for (const m of mensajes) {
       try {
+        // Anti-flood: si el número dispara una ráfaga, lo ignoramos en silencio.
+        if (!permitido(m.telefono)) {
+          logger.warn?.(`[whatsapp] anti-flood: ignorando ráfaga de ${m.telefono}`);
+          continue;
+        }
+        // Señal humana: marcar el mensaje entrante como leído antes de responder.
+        await evolution.marcarLeido(m.key, instance);
+
         const { replies } = await botService.procesar({
           estudio,
           telefono: m.telefono,

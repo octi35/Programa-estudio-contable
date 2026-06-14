@@ -89,16 +89,33 @@ async function enviarMedia(numero, { media, fileName, caption, mimetype = 'appli
 }
 
 /** Marca "escribiendo..." para dar feedback humano antes de responder. */
-async function presencia(numero, instance = DEFAULT_INSTANCE, estado = 'composing') {
+async function presencia(numero, instance = DEFAULT_INSTANCE, estado = 'composing', delay = 1200) {
   try {
     await request('POST', `/chat/sendPresence/${instance}`, {
       number: aNumero(numero),
       presence: estado,
-      delay: 1200,
+      delay,
     });
   } catch (e) {
     // No es crítico; logueamos y seguimos.
     logger.debug?.(`[evolution] presencia falló: ${e.message}`);
+  }
+}
+
+/**
+ * Marca como leído el mensaje entrante (doble tilde azul). Es una señal de
+ * comportamiento humano que reduce el riesgo de baneo: los números que reciben
+ * y nunca "leen" parecen bots/spam.
+ * @param {object} key  La key del mensaje de WhatsApp: { remoteJid, fromMe, id }
+ */
+async function marcarLeido(key, instance = DEFAULT_INSTANCE) {
+  if (!key?.id || !key?.remoteJid) return;
+  try {
+    await request('POST', `/chat/markMessageAsRead/${instance}`, {
+      readMessages: [{ remoteJid: key.remoteJid, fromMe: !!key.fromMe, id: key.id }],
+    });
+  } catch (e) {
+    logger.debug?.(`[evolution] markRead falló: ${e.message}`);
   }
 }
 
@@ -157,6 +174,7 @@ module.exports = {
   enviarTexto,
   enviarMedia,
   presencia,
+  marcarLeido,
   crearInstancia,
   obtenerQR,
   estadoConexion,
