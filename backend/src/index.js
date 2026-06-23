@@ -79,7 +79,13 @@ app.use((req, _res, next) => {
   next();
 });
 
-// Logging
+// Logging — redactamos tokens que viajan por query string (?token=...) para que
+// los JWT (auth legacy y links de portal/cliente) no queden en logs ni en
+// breadcrumbs de observabilidad.
+morgan.token('url', (req) => {
+  const raw = req.originalUrl || req.url || '';
+  return raw.replace(/([?&](?:token|auth_token)=)[^&]*/gi, '$1[REDACTED]');
+});
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));
 
 // Static files (uploads)
