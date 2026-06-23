@@ -456,6 +456,46 @@ router.post('/novedades/importar', auth, upload.single('archivo'), async (req, r
   }
 });
 
+// PUT /api/empleados/novedades/:novedadId — edita una novedad
+router.put('/novedades/:novedadId', auth, [param('novedadId').isUUID(), validate], async (req, res, next) => {
+  try {
+    const novedad = await prisma.novedadEmpleado.findFirst({
+      where: { id: req.params.novedadId, empleado: { empresa: { estudioId: req.usuario.estudioId } } },
+    });
+    if (!novedad) return res.status(404).json({ error: 'Novedad no encontrada' });
+
+    const { tipo, descripcion, fechaDesde, fechaHasta, valor, importe } = req.body;
+    const valorFinal = valor ?? importe;
+
+    const data = {};
+    if (tipo !== undefined) data.tipo = tipo;
+    if (descripcion !== undefined) data.descripcion = descripcion || novedad.tipo;
+    if (fechaDesde !== undefined) data.fechaDesde = new Date(fechaDesde);
+    if (fechaHasta !== undefined) data.fechaHasta = fechaHasta ? new Date(fechaHasta) : null;
+    if (valorFinal !== undefined) data.valor = valorFinal === null || valorFinal === '' ? null : parseFloat(valorFinal);
+
+    const updated = await prisma.novedadEmpleado.update({ where: { id: req.params.novedadId }, data });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/empleados/novedades/:novedadId — elimina una novedad
+router.delete('/novedades/:novedadId', auth, [param('novedadId').isUUID(), validate], async (req, res, next) => {
+  try {
+    const novedad = await prisma.novedadEmpleado.findFirst({
+      where: { id: req.params.novedadId, empleado: { empresa: { estudioId: req.usuario.estudioId } } },
+    });
+    if (!novedad) return res.status(404).json({ error: 'Novedad no encontrada' });
+
+    await prisma.novedadEmpleado.delete({ where: { id: req.params.novedadId } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/empleados/:id/ausentismos
 router.get('/:id/ausentismos', auth, [param('id').isUUID(), validate], async (req, res, next) => {
   try {

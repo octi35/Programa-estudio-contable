@@ -127,21 +127,43 @@ function FamiliarForm({ empleadoId, familiar, onSuccess, onClose }) {
   );
 }
 
-function NovedadForm({ empleadoId, onSuccess, onClose }) {
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm();
+const TIPOS_NOVEDAD = [
+  ['ALTA', 'Alta'], ['BAJA', 'Baja'], ['CAMBIO_CATEGORIA', 'Cambio de categoría'],
+  ['MODIFICACION_SUELDO', 'Modificación de sueldo'], ['HORA_EXTRA', 'Hora extra'],
+  ['ADELANTO_SUELDO', 'Adelanto de sueldo'], ['LICENCIA', 'Licencia'], ['SUSPENSION', 'Suspensión'],
+  ['VACACIONES', 'Vacaciones'], ['EMBARGO', 'Embargo'], ['SEGURO_VIDA', 'Seguro de vida'],
+  ['PERSONALIZADA', 'Personalizada'],
+];
+
+const toDateInput = (d) => (d ? new Date(d).toISOString().split('T')[0] : '');
+
+function NovedadForm({ empleadoId, novedad, onSuccess, onClose }) {
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm({
+    defaultValues: novedad ? {
+      tipo: novedad.tipo,
+      descripcion: novedad.descripcion || '',
+      fechaDesde: toDateInput(novedad.fechaDesde),
+      fechaHasta: toDateInput(novedad.fechaHasta),
+      valor: novedad.valor ?? '',
+    } : {},
+  });
 
   const onSubmit = async (data) => {
+    const payload = {
+      tipo: data.tipo,
+      descripcion: data.descripcion,
+      fechaDesde: data.fechaDesde,
+      fechaHasta: data.fechaHasta || null,
+      valor: data.valor !== '' && data.valor != null ? Number(data.valor) : null,
+    };
     try {
-      await api.post('/empleados/novedades/masiva', {
-        empleadoIds: [empleadoId],
-        tipo: data.tipo,
-        importe: data.importe ? Number(data.importe) : undefined,
-        cantidad: data.cantidad ? Number(data.cantidad) : undefined,
-        descripcion: data.descripcion,
-        fechaDesde: data.fechaDesde,
-        fechaHasta: data.fechaHasta || null,
-      });
-      toast.success('Novedad registrada');
+      if (novedad?.id) {
+        await api.put(`/empleados/novedades/${novedad.id}`, payload);
+        toast.success('Novedad actualizada');
+      } else {
+        await api.post('/empleados/novedades/masiva', { empleadoIds: [empleadoId], ...payload });
+        toast.success('Novedad registrada');
+      }
       onSuccess();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Error al guardar');
@@ -154,20 +176,7 @@ function NovedadForm({ empleadoId, onSuccess, onClose }) {
         <label className="label">Tipo de novedad *</label>
         <select className="input" {...register('tipo', { required: 'Requerido' })}>
           <option value="">Seleccionar...</option>
-          <option value="ALTA">Alta</option>
-          <option value="BAJA">Baja</option>
-          <option value="CAMBIO_CATEGORIA">Cambio de categoría</option>
-          <option value="CAMBIO_BASICO">Cambio de básico</option>
-          <option value="HORA_EXTRA">Hora extra</option>
-          <option value="ADELANTO_SUELDO">Adelanto de sueldo</option>
-          <option value="LICENCIA">Licencia</option>
-          <option value="SUSPENSION">Suspensión</option>
-          <option value="VACACIONES">Vacaciones</option>
-          <option value="DIAS_TRABAJADOS">Días trabajados</option>
-          <option value="DIAS_NO_REMUNERATIVOS">Días no remunerativos</option>
-          <option value="OBRA_SOCIAL_PREPAGA">Obra social prepaga</option>
-          <option value="SINDICATO">Sindicato</option>
-          <option value="PERSONALIZADA">Personalizada</option>
+          {TIPOS_NOVEDAD.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         {errors.tipo && <p className="text-red-500 text-xs mt-1">{errors.tipo.message}</p>}
       </div>
@@ -182,15 +191,10 @@ function NovedadForm({ empleadoId, onSuccess, onClose }) {
           <input type="date" className="input" {...register('fechaHasta')} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="label">Importe</label>
-          <input type="number" step="0.01" className="input" {...register('importe')} />
-        </div>
-        <div>
-          <label className="label">Cantidad</label>
-          <input type="number" step="0.01" className="input" {...register('cantidad')} />
-        </div>
+      <div>
+        <label className="label">Importe / Valor</label>
+        <input type="number" step="0.01" className="input" placeholder="Ej: importe de hora extra, adelanto, embargo…" {...register('valor')} />
+        <p className="text-xs text-gray-400 mt-1">Monto en pesos que impacta en la liquidación (dejar vacío si no aplica).</p>
       </div>
       <div>
         <label className="label">Descripción</label>
@@ -199,7 +203,7 @@ function NovedadForm({ empleadoId, onSuccess, onClose }) {
       <div className="flex justify-end gap-3 pt-2">
         <button type="button" onClick={onClose} className="btn-secondary">Cancelar</button>
         <button type="submit" disabled={isSubmitting} className="btn-primary">
-          {isSubmitting ? 'Guardando...' : 'Guardar'}
+          {isSubmitting ? 'Guardando...' : novedad ? 'Guardar cambios' : 'Guardar'}
         </button>
       </div>
     </form>
@@ -375,6 +379,7 @@ function TabFamiliares({ empleadoId }) {
 // ── Tab: Novedades ─────────────────────────────────────────────────────────────
 function TabNovedades({ empleado }) {
   const [modal, setModal] = useState(false);
+  const [editando, setEditando] = useState(null);
   const [novedades, setNovedades] = useState(empleado.novedades || []);
 
   const recargar = () => {
@@ -383,17 +388,36 @@ function TabNovedades({ empleado }) {
 
   const TIPO_LABEL = {
     ALTA: 'Alta', BAJA: 'Baja', CAMBIO_CATEGORIA: 'Cambio categoría', CAMBIO_BASICO: 'Cambio básico',
-    HORA_EXTRA: 'Hora extra', ADELANTO_SUELDO: 'Adelanto sueldo', LICENCIA: 'Licencia',
-    SUSPENSION: 'Suspensión', VACACIONES: 'Vacaciones', DIAS_TRABAJADOS: 'Días trabajados',
-    DIAS_NO_REMUNERATIVOS: 'Días no rem.', OBRA_SOCIAL_PREPAGA: 'Obra social prepaga',
-    SINDICATO: 'Sindicato', PERSONALIZADA: 'Personalizada',
+    MODIFICACION_SUELDO: 'Modificación sueldo', HORA_EXTRA: 'Hora extra', ADELANTO_SUELDO: 'Adelanto sueldo',
+    LICENCIA: 'Licencia', SUSPENSION: 'Suspensión', VACACIONES: 'Vacaciones', EMBARGO: 'Embargo',
+    SEGURO_VIDA: 'Seguro de vida', DIAS_TRABAJADOS: 'Días trabajados', DIAS_NO_REMUNERATIVOS: 'Días no rem.',
+    OBRA_SOCIAL_PREPAGA: 'Obra social prepaga', SINDICATO: 'Sindicato', PERSONALIZADA: 'Personalizada',
+  };
+
+  const abrirNueva = () => { setEditando(null); setModal(true); };
+  const abrirEdicion = (n) => { setEditando(n); setModal(true); };
+
+  const eliminar = async (n) => {
+    if (!await confirm({
+      title: 'Eliminar novedad',
+      message: `Se eliminará la novedad "${TIPO_LABEL[n.tipo] || n.tipo}" del empleado.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    })) return;
+    try {
+      await api.delete(`/empleados/novedades/${n.id}`);
+      toast.success('Novedad eliminada');
+      recargar();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al eliminar');
+    }
   };
 
   return (
     <div className="card">
       <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
         <h3 className="font-semibold text-gray-900">Novedades del empleado</h3>
-        <button className="btn-primary text-xs" onClick={() => setModal(true)}>+ Nueva novedad</button>
+        <button className="btn-primary text-xs" onClick={abrirNueva}>+ Nueva novedad</button>
       </div>
       {novedades.length === 0 ? (
         <p className="px-6 py-8 text-center text-gray-400">Sin novedades registradas</p>
@@ -406,6 +430,7 @@ function TabNovedades({ empleado }) {
               <th className="px-5 py-3 text-left">Desde</th>
               <th className="px-5 py-3 text-left">Hasta</th>
               <th className="px-5 py-3 text-right">Importe</th>
+              <th className="px-5 py-3 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -415,16 +440,21 @@ function TabNovedades({ empleado }) {
                 <td className="px-5 py-3 text-gray-500">{n.descripcion || '—'}</td>
                 <td className="px-5 py-3 text-gray-500">{formatDate(n.fechaDesde)}</td>
                 <td className="px-5 py-3 text-gray-500">{n.fechaHasta ? formatDate(n.fechaHasta) : 'Vigente'}</td>
-                <td className="px-5 py-3 text-right font-medium">{n.importe ? formatMoney(n.importe) : '—'}</td>
+                <td className="px-5 py-3 text-right font-medium">{n.valor != null && n.valor !== '' ? formatMoney(n.valor) : '—'}</td>
+                <td className="px-5 py-3 text-right space-x-2 whitespace-nowrap">
+                  <button className="text-blue-600 text-xs hover:underline" onClick={() => abrirEdicion(n)}>Editar</button>
+                  <button className="text-red-500 text-xs hover:underline" onClick={() => eliminar(n)}>Eliminar</button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
       {modal && (
-        <Modal onClose={() => setModal(false)} title="Nueva novedad">
+        <Modal onClose={() => setModal(false)} title={editando ? 'Editar novedad' : 'Nueva novedad'}>
           <NovedadForm
             empleadoId={empleado.id}
+            novedad={editando}
             onSuccess={() => { setModal(false); recargar(); }}
             onClose={() => setModal(false)}
           />
