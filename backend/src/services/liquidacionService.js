@@ -235,12 +235,20 @@ async function guardarLiquidacion(liquidacionData, periodoId, conceptosMap = {})
     where: { periodoId_empleadoId: { periodoId, empleadoId: liquidacionData.empleadoId } },
   });
 
-  const conceptoDefault = await prisma.concepto.findFirst({
-    where: { codigo: '001' },
-  });
+  // Concepto de respaldo: cada DetalleLiquidacion requiere un conceptoId (FK NOT NULL).
+  // Si el código no está mapeado, usamos el concepto '001' o, en su defecto, cualquiera
+  // existente, para no descartar silenciosamente líneas de la liquidación.
+  const conceptoDefault = (await prisma.concepto.findFirst({ where: { codigo: '001' } }))
+    || (await prisma.concepto.findFirst());
+  if (!conceptoDefault) {
+    throw Object.assign(
+      new Error('No hay conceptos cargados. Ejecutá el seed de conceptos antes de liquidar.'),
+      { statusCode: 409 }
+    );
+  }
 
   const detallesCreate = liquidacionData.detalles.map(d => ({
-    conceptoId: conceptosMap[d.codigo] || conceptoDefault?.id || null,
+    conceptoId: conceptosMap[d.codigo] || conceptoDefault.id,
     descripcion: d.descripcion,
     cantidad: d.cantidad || null,
     valorUnitario: d.valorUnitario || null,
@@ -249,7 +257,7 @@ async function guardarLiquidacion(liquidacionData, periodoId, conceptosMap = {})
     tipo: d.tipo || 'REMUNERATIVO',
     remunerativo: d.remunerativo ?? true,
     orden: d.orden || 0,
-  })).filter(d => d.conceptoId);
+  }));
 
   if (existing) {
     await prisma.detalleLiquidacion.deleteMany({ where: { liquidacionId: existing.id } });

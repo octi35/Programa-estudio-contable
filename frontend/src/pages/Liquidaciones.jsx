@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon, EnvelopeIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
+import { CalculatorIcon, PlayIcon, DocumentTextIcon, ArrowDownTrayIcon, LockClosedIcon, BoltIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { useForm } from 'react-hook-form';
 import toast from 'react-hot-toast';
 import api from '../api/client';
@@ -372,6 +372,23 @@ export default function Liquidaciones() {
     openAuthed(`/api/liquidaciones/${id}/recibo`);
   };
 
+  const eliminarLiquidacion = async (e, liq) => {
+    e.stopPropagation();
+    if (!await confirm({
+      title: 'Eliminar liquidación',
+      message: `Se eliminará la liquidación de ${liq.empleado.apellido}, ${liq.empleado.nombre} (${mesNombre(liq.mes)} ${liq.anio}). Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    })) return;
+    try {
+      await api.delete(`/liquidaciones/${liq.id}`);
+      toast.success('Liquidación eliminada');
+      cargar();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al eliminar');
+    }
+  };
+
   const enviarRecibosWhatsapp = async () => {
     if (!filtros.empresaId) return;
     const empresa = empresas.find(e => e.id === filtros.empresaId);
@@ -617,6 +634,13 @@ export default function Liquidaciones() {
                           className="text-blue-500 hover:text-blue-700">
                           <DocumentTextIcon className="w-4 h-4" />
                         </button>
+                        {liq.estado !== 'CONFIRMADO' && liq.periodo?.estado !== 'CERRADO' && (
+                          <button onClick={e => eliminarLiquidacion(e, liq)}
+                            title="Eliminar liquidación"
+                            className="text-gray-400 hover:text-red-600">
+                            <TrashIcon className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

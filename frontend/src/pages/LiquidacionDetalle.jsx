@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeftIcon, DocumentTextIcon, CheckCircleIcon, EnvelopeIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, DocumentTextIcon, CheckCircleIcon, EnvelopeIcon, ArrowDownTrayIcon, PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import api from '../api/client';
 import { openAuthed } from '../utils/download';
+import { confirm } from '../components/confirm';
+import DetallesEditor from '../components/DetallesEditor';
 import { formatMoney, formatDate, mesNombre, estadoLiquidacionLabel, tipoLiquidacionLabel } from '../utils/format';
 
 function ConceptoRow({ d, esDescuento }) {
@@ -29,6 +31,9 @@ export default function LiquidacionDetalle() {
   const navigate = useNavigate();
   const [liq, setLiq] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [conceptos, setConceptos] = useState([]);
 
   const cargar = () =>
     api.get(`/liquidaciones/${id}`)
@@ -44,6 +49,48 @@ export default function LiquidacionDetalle() {
       cargar();
     } catch {
       toast.error('Error al confirmar');
+    }
+  };
+
+  const entrarEdicion = async () => {
+    if (conceptos.length === 0) {
+      try {
+        const r = await api.get('/conceptos');
+        setConceptos(Array.isArray(r.data) ? r.data : (r.data.data || []));
+      } catch {
+        toast.error('No se pudieron cargar los conceptos');
+      }
+    }
+    setEditMode(true);
+  };
+
+  const guardarEdicion = async (detalles) => {
+    setSaving(true);
+    try {
+      await api.put(`/liquidaciones/${id}/conceptos`, { detalles });
+      toast.success('Importes actualizados');
+      setEditMode(false);
+      cargar();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al guardar los importes');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const eliminar = async () => {
+    if (!await confirm({
+      title: 'Eliminar liquidación',
+      message: `Se eliminará la liquidación de ${liq?.empleado?.apellido}, ${liq?.empleado?.nombre} (${mesNombre(liq?.mes)} ${liq?.anio}). Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      danger: true,
+    })) return;
+    try {
+      await api.delete(`/liquidaciones/${id}`);
+      toast.success('Liquidación eliminada');
+      navigate(-1);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al eliminar');
     }
   };
 
@@ -74,15 +121,16 @@ export default function LiquidacionDetalle() {
   const descuentos = liq.detalles.filter(d => d.naturaleza === 'DESCUENTO');
   const informativos = liq.detalles.filter(d => d.naturaleza === 'INFORMATIVO');
   const est = estadoLiquidacionLabel[liq.estado] || { label: liq.estado, cls: 'badge-gray' };
+  const editable = liq.estado !== 'CONFIRMADO' && liq.periodo?.estado !== 'CERRADO';
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button onClick={() => navigate(-1)} className="btn-secondary p-2">
           <ArrowLeftIcon className="w-4 h-4" />
         </button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-[200px]">
           <h1 className="text-xl font-bold text-gray-900">
             {tipoLiquidacionLabel[liq.tipo] || liq.tipo} — {mesNombre(liq.mes)} {liq.anio}
           </h1>
@@ -91,25 +139,37 @@ export default function LiquidacionDetalle() {
           </p>
         </div>
         <span className={est.cls}>{est.label}</span>
-        {liq.estado === 'CALCULADO' && (
+        {!editMode && editable && (
+          <button onClick={entrarEdicion} className="btn-secondary">
+            <PencilSquareIcon className="w-4 h-4" /> Editar importes
+          </button>
+        )}
+        {!editMode && liq.estado === 'CALCULADO' && (
           <button onClick={confirmar} className="btn-success">
             <CheckCircleIcon className="w-4 h-4" /> Confirmar
           </button>
         )}
-        <button onClick={abrirRecibo} className="btn-secondary">
-          <DocumentTextIcon className="w-4 h-4" /> Ver recibo PDF
-        </button>
-        {liq.estado === 'CONFIRMADO' && (
+        {!editMode && (
+          <button onClick={abrirRecibo} className="btn-secondary">
+            <DocumentTextIcon className="w-4 h-4" /> Ver recibo PDF
+          </button>
+        )}
+        {!editMode && liq.estado === 'CONFIRMADO' && (
           <button onClick={enviarEmail} className="btn-secondary">
             <EnvelopeIcon className="w-4 h-4" /> Enviar por email
           </button>
         )}
-        {liq.periodo?.estado === 'CERRADO' && empresa?.id && (
+        {!editMode && liq.periodo?.estado === 'CERRADO' && empresa?.id && (
           <button
             onClick={() => openAuthed(`/api/reportes/f931?empresaId=${empresa.id}&anio=${liq.anio}&mes=${liq.mes}`)}
             className="btn-secondary"
             title="Descargar F.931 (Excel) del período cerrado">
             <ArrowDownTrayIcon className="w-4 h-4" /> Descargar F.931
+          </button>
+        )}
+        {!editMode && editable && (
+          <button onClick={eliminar} className="btn-secondary text-red-600 hover:bg-red-50" title="Eliminar liquidación">
+            <TrashIcon className="w-4 h-4" /> Eliminar
           </button>
         )}
       </div>
@@ -133,7 +193,16 @@ export default function LiquidacionDetalle() {
         ))}
       </div>
 
-      {/* Recibo visual */}
+      {editMode ? (
+        <DetallesEditor
+          detalles={liq.detalles}
+          conceptos={conceptos}
+          saving={saving}
+          onCancel={() => setEditMode(false)}
+          onSave={guardarEdicion}
+        />
+      ) : (
+      /* Recibo visual */
       <div className="card overflow-hidden">
         {/* Header recibo */}
         <div className="bg-[#1e3a5f] px-6 py-4">
@@ -244,6 +313,7 @@ export default function LiquidacionDetalle() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

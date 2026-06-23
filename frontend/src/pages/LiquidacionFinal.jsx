@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeftIcon, CalculatorIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, CalculatorIcon, CheckCircleIcon, PencilSquareIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import api from '../api/client';
-import Modal from '../components/Modal';
+import DetallesEditor from '../components/DetallesEditor';
 import { formatMoney, formatDate, mesNombre } from '../utils/format';
 
 const MOTIVOS = [
@@ -31,9 +31,12 @@ export default function LiquidacionFinal() {
   const [resultado, setResultado] = useState(null);
   const [confirmando, setConfirmando] = useState(false);
   const [periodoId, setPeriodoId] = useState(null);
+  const [conceptos, setConceptos] = useState([]);
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     api.get('/empresas').then(r => setEmpresas(r.data?.data || r.data));
+    api.get('/conceptos').then(r => setConceptos(Array.isArray(r.data) ? r.data : (r.data?.data || []))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -55,6 +58,7 @@ export default function LiquidacionFinal() {
     if (!empleadoId || !fechaBaja || !motivo) { toast.error('Completá todos los campos'); return; }
     setCalculando(true);
     setResultado(null);
+    setEditMode(false);
     try {
       const res = await api.post('/liquidaciones/calcular-final', { empleadoId, fechaBaja, motivo });
       setResultado(res.data);
@@ -70,6 +74,39 @@ export default function LiquidacionFinal() {
     try {
       const res = await api.post('/liquidaciones/guardar-final', { empleadoId, empresaId, fechaBaja, motivo });
       toast.success('Liquidación final guardada');
+      navigate(`/liquidaciones/${res.data.id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Error al guardar');
+    } finally {
+      setConfirmando(false);
+    }
+  };
+
+  // Mapea los detalles calculados (con código) a líneas editables con conceptoId real
+  const detallesEditables = () => {
+    const porCodigo = {};
+    conceptos.forEach(c => { porCodigo[c.codigo] = c.id; });
+    const fallback = conceptos[0]?.id || '';
+    return (resultado?.detalles || []).map(d => ({
+      conceptoId: porCodigo[d.codigo] || fallback,
+      descripcion: d.descripcion,
+      naturaleza: d.naturaleza,
+      tipo: d.tipo || 'REMUNERATIVO',
+      remunerativo: d.remunerativo ?? true,
+      importe: Math.abs(Number(d.importe || 0)),
+      cantidad: d.cantidad ?? null,
+      valorUnitario: d.valorUnitario ?? null,
+      orden: d.orden ?? 0,
+    }));
+  };
+
+  // Guarda con los importes editados: crea la liquidación final y sobreescribe sus líneas
+  const guardarEditado = async (detalles) => {
+    setConfirmando(true);
+    try {
+      const res = await api.post('/liquidaciones/guardar-final', { empleadoId, empresaId, fechaBaja, motivo });
+      await api.put(`/liquidaciones/${res.data.id}/conceptos`, { detalles });
+      toast.success('Liquidación final guardada con tus ajustes');
       navigate(`/liquidaciones/${res.data.id}`);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Error al guardar');
@@ -133,8 +170,21 @@ export default function LiquidacionFinal() {
         </div>
       </form>
 
+      {/* Resultado en modo edición */}
+      {resultado && editMode && (
+        <DetallesEditor
+          detalles={detallesEditables()}
+          conceptos={conceptos}
+          saving={confirmando}
+          title="Ajustá los importes de la liquidación final — se guardará exactamente lo que ves"
+          saveLabel="Guardar liquidación final"
+          onCancel={() => setEditMode(false)}
+          onSave={guardarEditado}
+        />
+      )}
+
       {/* Resultado */}
-      {resultado && (
+      {resultado && !editMode && (
         <div className="card overflow-hidden">
           <div className="bg-[#1e3a5f] px-6 py-4 flex justify-between items-start">
             <div>
@@ -217,9 +267,12 @@ export default function LiquidacionFinal() {
 
           <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
             <button onClick={() => setResultado(null)} className="btn-secondary">Recalcular</button>
+            <button onClick={() => setEditMode(true)} disabled={confirmando || conceptos.length === 0} className="btn-secondary">
+              <PencilSquareIcon className="w-4 h-4" /> Editar importes
+            </button>
             <button onClick={guardar} disabled={confirmando} className="btn-primary">
               <CheckCircleIcon className="w-4 h-4" />
-              {confirmando ? 'Guardando...' : 'Guardar y confirmar liquidación'}
+              {confirmando ? 'Guardando...' : 'Guardar liquidación'}
             </button>
           </div>
         </div>

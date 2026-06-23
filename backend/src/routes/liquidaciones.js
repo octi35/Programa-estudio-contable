@@ -623,6 +623,13 @@ router.put('/:id/conceptos', auth, [param('id').isUUID(), validate], async (req,
     const { detalles } = req.body;
     if (!Array.isArray(detalles)) return res.status(400).json({ error: 'detalles debe ser un array' });
 
+    // Validaciones mínimas: cada línea necesita concepto, naturaleza, tipo y un importe numérico
+    for (const [i, d] of detalles.entries()) {
+      if (!d.conceptoId) return res.status(400).json({ error: `Línea ${i + 1}: falta el concepto` });
+      if (!['HABER', 'DESCUENTO', 'INFORMATIVO'].includes(d.naturaleza)) return res.status(400).json({ error: `Línea ${i + 1}: naturaleza inválida` });
+      if (isNaN(Number(d.importe))) return res.status(400).json({ error: `Línea ${i + 1}: importe inválido` });
+    }
+
     await prisma.$transaction([
       prisma.detalleLiquidacion.deleteMany({ where: { liquidacionId: req.params.id } }),
       prisma.detalleLiquidacion.createMany({
@@ -631,19 +638,19 @@ router.put('/:id/conceptos', auth, [param('id').isUUID(), validate], async (req,
           conceptoId: d.conceptoId,
           descripcion: d.descripcion,
           naturaleza: d.naturaleza,
-          tipo: d.tipo,
+          tipo: d.tipo || 'REMUNERATIVO',
           remunerativo: d.remunerativo ?? true,
-          importe: d.importe,
-          cantidad: d.cantidad || null,
-          valorUnitario: d.valorUnitario || null,
+          importe: Math.abs(Number(d.importe)),
+          cantidad: d.cantidad != null && d.cantidad !== '' ? Number(d.cantidad) : null,
+          valorUnitario: d.valorUnitario != null && d.valorUnitario !== '' ? Number(d.valorUnitario) : null,
           orden: d.orden ?? i + 1,
         })),
       }),
     ]);
 
-    const haberes = detalles.filter(d => d.naturaleza === 'HABER').reduce((s, d) => s + Number(d.importe), 0);
+    const haberes = detalles.filter(d => d.naturaleza === 'HABER').reduce((s, d) => s + Math.abs(Number(d.importe)), 0);
     const descuentos = detalles.filter(d => d.naturaleza === 'DESCUENTO').reduce((s, d) => s + Math.abs(Number(d.importe)), 0);
-    const contribuciones = detalles.filter(d => d.naturaleza === 'INFORMATIVO').reduce((s, d) => s + Number(d.importe), 0);
+    const contribuciones = detalles.filter(d => d.naturaleza === 'INFORMATIVO').reduce((s, d) => s + Math.abs(Number(d.importe)), 0);
 
     const updated = await prisma.liquidacion.update({
       where: { id: req.params.id },
@@ -657,6 +664,38 @@ router.put('/:id/conceptos', auth, [param('id').isUUID(), validate], async (req,
     });
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/liquidaciones/:id — elimina una liquidación no confirmada y de período abierto
+router.delete('/:id', auth, [param('id').isUUID(), validate], async (req, res, next) => {
+  try {
+    const liquidacion = await prisma.liquidacion.findFirst({
+      where: { id: req.params.id, periodo: { empresa: { estudioId: req.usuario.estudioId } } },
+      include: { empleado: { select: { apellido: true, nombre: true } }, periodo: { select: { estado: true } } },
+    });
+    if (!liquidacion) return res.status(404).json({ error: 'Liquidación no encontrada' });
+    if (liquidacion.estado === 'CONFIRMADO') return res.status(409).json({ error: 'No se puede eliminar una liquidación confirmada' });
+    if (liquidacion.periodo?.estado === 'CERRADO') return res.status(409).json({ error: 'No se puede eliminar una liquidación de un período cerrado' });
+
+    await prisma.$transaction([
+      prisma.detalleLiquidacion.deleteMany({ where: { liquidacionId: req.params.id } }),
+      prisma.liquidacion.delete({ where: { id: req.params.id } }),
+    ]);
+
+    await logAccion({
+      usuarioId: req.usuario.id,
+      estudioId: req.usuario.estudioId,
+      accion: 'ELIMINAR_LIQUIDACION',
+      entidad: 'Liquidacion',
+      entidadId: req.params.id,
+      detalle: { empleado: `${liquidacion.empleado?.apellido} ${liquidacion.empleado?.nombre}`, mes: liquidacion.mes, anio: liquidacion.anio },
+      ip: req.ip,
+    });
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
