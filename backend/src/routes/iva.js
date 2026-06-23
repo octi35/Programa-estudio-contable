@@ -3,7 +3,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const ExcelJS = require('exceljs');
-const XLSX = require('xlsx');
 const AdmZip = require('adm-zip');
 const JSZip = require('jszip');
 const { body, param, query } = require('express-validator');
@@ -114,20 +113,73 @@ function mapHeader(h) {
   return ALIAS_LOOKUP[n] || n;
 }
 
-function parseAfipFile(buffer, filename = '') {
+// Coerciona un valor de celda exceljs a primitivo (formula → result,
+// hyperlink/richText → texto).
+function cellToValue(v) {
+  if (v == null) return '';
+  if (v instanceof Date) return v;
+  if (typeof v === 'object') {
+    if ('result' in v) return v.result;
+    if ('text' in v) return v.text;
+    if (Array.isArray(v.richText)) return v.richText.map(t => t.text).join('');
+    if ('hyperlink' in v) return v.text || v.hyperlink;
+    return '';
+  }
+  return v;
+}
+
+// Parser de texto delimitado (CSV/TXT de AFIP). Autodetecta separador (;|tab|,)
+// por la primera línea. No interpreta comillas anidadas complejas — suficiente
+// para los exports de Mis Comprobantes / Compras y Ventas.
+function parseDelimited(text) {
+  const lineas = text.replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lineas.length === 0) return [];
+  const cont = (s, ch) => (s.split(ch).length - 1);
+  const primera = lineas[0];
+  const sep = cont(primera, ';') >= cont(primera, '\t')
+    ? (cont(primera, ';') >= cont(primera, ',') ? ';' : ',')
+    : (cont(primera, '\t') >= cont(primera, ',') ? '\t' : ',');
+  return lineas.map(l => l.split(sep).map(c => c.replace(/^"|"$/g, '').trim()));
+}
+
+// Lee un archivo AFIP (xlsx / csv / txt, opcionalmente dentro de un .zip) a
+// filas (array de arrays). El .xls binario legacy ya no se soporta (requería
+// la dependencia `xlsx`, con CVE de prototype pollution sin fix): AFIP exporta
+// en .xlsx/.csv y el usuario puede reexportar si tuviera un .xls viejo.
+async function parseAfipFile(buffer, filename = '') {
   let fileBuffer = buffer;
-  const lower = filename.toLowerCase();
+  let lower = filename.toLowerCase();
 
   if (lower.endsWith('.zip')) {
     const zip = new AdmZip(buffer);
     const entry = zip.getEntries().find(e => !e.isDirectory && (e.entryName.endsWith('.xlsx') || e.entryName.endsWith('.xls') || e.entryName.endsWith('.csv') || e.entryName.endsWith('.txt')));
     if (!entry) return [];
     fileBuffer = entry.getData();
+    lower = entry.entryName.toLowerCase();
   }
 
-  const wb = XLSX.read(fileBuffer, { type: 'buffer', raw: false });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  let rows = [];
+  if (lower.endsWith('.csv') || lower.endsWith('.txt')) {
+    rows = parseDelimited(fileBuffer.toString('utf8'));
+  } else if (lower.endsWith('.xls') && !lower.endsWith('.xlsx')) {
+    const err = new Error('Formato .xls (Excel 97-2003) no soportado. Reexportá el archivo como .xlsx o .csv.');
+    err.statusCode = 400;
+    throw err;
+  } else {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(fileBuffer);
+    const sheet = wb.worksheets[0];
+    if (!sheet) return [];
+    sheet.eachRow((row) => {
+      // row.values es 1-indexado (índice 0 vacío) y disperso: recorremos por
+      // índice para rellenar huecos (celdas vacías) en vez de dejarlos como gaps.
+      const vals = row.values;
+      const arr = [];
+      for (let c = 1; c < vals.length; c++) arr.push(cellToValue(vals[c]));
+      rows.push(arr);
+    });
+  }
+
   if (!rows || rows.length === 0) return [];
 
   const headers = rows[0].map(mapHeader);
@@ -488,7 +540,7 @@ router.post('/comprobantes/importar-afip', auth, upload.single('archivo'), async
     const empresa = await prisma.empresa.findFirst({ where: { id: empresaId, estudioId: req.usuario.estudioId } });
     if (!empresa) return res.status(404).json({ error: 'Empresa no encontrada' });
 
-    const filas = parseAfipFile(req.file.buffer, req.file.originalname || 'afip');
+    const filas = await parseAfipFile(req.file.buffer, req.file.originalname || 'afip');
     if (!filas.length) return res.status(400).json({ error: 'No se pudieron leer filas del archivo' });
 
     const errores = [];
@@ -984,3 +1036,6 @@ router.get('/cuentas-corrientes', auth, async (req, res, next) => {
 });
 
 module.exports = router;
+// Exportados sólo para tests de regresión del parser de archivos AFIP.
+module.exports.parseAfipFile = parseAfipFile;
+module.exports.parseDelimited = parseDelimited;
