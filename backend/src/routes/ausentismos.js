@@ -10,14 +10,15 @@ const validate = require('../middleware/validate');
 router.get('/', auth, async (req, res, next) => {
   try {
     const { empleadoId, empresaId, anio, mes } = req.query;
-    const where = {};
+
+    // Scope de estudio anclado SIEMPRE (vía relación empleado→empresa) para
+    // evitar fuga cross-tenant cuando se filtra por empleadoId/empresaId ajenos.
+    const where = { empleado: { empresa: { estudioId: req.usuario.estudioId } } };
 
     if (empleadoId) {
       where.empleadoId = empleadoId;
     } else if (empresaId) {
-      where.empleado = { empresaId };
-    } else {
-      where.empleado = { empresa: { estudioId: req.usuario.estudioId } };
+      where.empleado = { ...where.empleado, empresaId };
     }
 
     if (anio && mes) {

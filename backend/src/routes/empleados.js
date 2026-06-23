@@ -25,13 +25,11 @@ router.get('/', auth, async (req, res, next) => {
     const { empresaId, buscar, activo, page = 1, limit = 50 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where = {};
+    // El scope de estudio se ancla SIEMPRE para evitar fuga cross-tenant:
+    // si se filtra por empresaId, igual debe pertenecer al estudio del usuario.
+    const where = { empresa: { estudioId: req.usuario.estudioId } };
     if (activo !== undefined) where.activo = activo === 'true';
-    if (empresaId) {
-      where.empresaId = empresaId;
-    } else {
-      where.empresa = { estudioId: req.usuario.estudioId };
-    }
+    if (empresaId) where.empresaId = empresaId;
     if (buscar) {
       where.OR = [
         { apellido: { contains: buscar, mode: 'insensitive' } },
