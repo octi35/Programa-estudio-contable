@@ -93,6 +93,8 @@ async function emitirFactura(estudio, empresaReceptora, datosFactura) {
     Concepto: 2, // Servicios (honorarios)
     DocTipo: docTipo,
     DocNro: docTipo === 99 ? 0 : parseInt(docNro, 10),
+    // parche: 5 = Consumidor Final solo si DocTipo es 99; con otro DocTipo falta la condición frente al IVA del cliente
+    ...(Number(docTipo) === 99 ? { CondicionIVAReceptorId: 5 } : {}),
     CbteDesde: nroComprobante,
     CbteHasta: nroComprobante,
     CbteFch: parseInt(fechaCbte, 10),
